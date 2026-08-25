@@ -92,8 +92,8 @@ type WorkflowAlert = {
   message: string
   response?: string
   promisedAt?: string
-  priorityDecision?: 'accepted' | 'forced'
-  kind?: 'dg-alert' | 'reply' | 'department-message' | 'stock-auto'
+  priorityDecision?: 'observed' | 'forced'
+  kind?: 'dg-alert' | 'reply' | 'department-message' | 'stock-auto' | 'dg-observation'
 }
 
 type WorkflowCase = {
@@ -121,6 +121,31 @@ type StockRow = {
   fournisseur: string
   commandeSuggeree: number
   statut: 'Normal' | 'Faible stock' | 'Rupture'
+}
+
+type CollectionStatus = 'À recouvrer' | 'Partiel' | 'Promesse client' | 'Recouvré' | 'À accélérer'
+
+type DgObservation = {
+  id: number
+  message: string
+  urgency: 'Normal' | 'Urgent' | 'Critique'
+  requestedDate: string
+  status: 'Non lue' | 'Lue' | 'Traitée'
+}
+
+type CollectionCase = {
+  id: string
+  client: string
+  societe: 'TBTrade' | 'TBRetail'
+  commercial: string
+  totalDue: number
+  assignedAmount: number
+  recoveredAmount: number
+  currentDueDate: string
+  nextPromiseDate: string
+  clientComment: string
+  status: CollectionStatus
+  observations: DgObservation[]
 }
 
 type FilterState = {
@@ -260,15 +285,15 @@ const demoCredentials = [
 const workflowRoles: Role[] = ['finance', 'compta', 'commercial', 'appro']
 
 const departmentLiaisons: Array<{ from: Role; to: Role; trigger: string; action: string }> = [
-  { from: 'dg', to: 'appro', trigger: 'Stock inférieur au seuil', action: 'Valider la passation de commande et suivre la réponse Appro.' },
+  { from: 'dg', to: 'appro', trigger: 'Stock inférieur au seuil', action: 'Observer la passation de commande et suivre la réponse Appro.' },
   { from: 'appro', to: 'finance', trigger: 'Commande fournisseur à engager', action: 'Confirmer budget, disponibilité paiement et priorité fournisseur.' },
   { from: 'finance', to: 'compta', trigger: 'Paiement ou financement validé', action: 'Contrôler facture, pièces justificatives et statut FNR.' },
   { from: 'compta', to: 'commercial', trigger: 'Impact client ou recouvrement', action: 'Informer le commercial sur blocage, relance ou disponibilité.' },
-  { from: 'commercial', to: 'dg', trigger: 'Risque client ou arbitrage', action: 'Remonter décision, urgence ou conflit de priorité à la Direction.' },
+  { from: 'commercial', to: 'dg', trigger: 'Risque client ou retard recouvrement', action: 'Remonter promesse client, urgence ou conflit de priorité à la Direction.' },
 ]
 
 const roleCapabilities: Record<Role, string> = {
-  dg: 'Supervision globale, décisions, alertes et arbitrage des priorités.',
+  dg: 'Supervision globale, observations, alertes et suivi des priorités.',
   finance: 'Trésorerie, financement fournisseur, disponibilité bancaire et paiements prioritaires.',
   compta: 'Factures non réglées, contrôle facture, préparation paiement et lettrage.',
   appro: 'Stocks, commandes fournisseurs, réception et disponibilité articles.',
@@ -285,9 +310,9 @@ const departmentSlaHours: Record<Role, number> = {
 
 const quickMessageTemplates: Record<Role, string[]> = {
   dg: [
-    'Décision DG: merci de traiter ce dossier maintenant et de confirmer un délai.',
-    'Décision DG: priorité obligatoire, aucun report sans validation direction.',
-    'Décision DG: délai accepté, merci de clôturer avec justificatif.',
+    'Observation DG: accélérer le traitement et confirmer votre action.',
+    'Observation DG: priorité client, merci de relancer aujourd’hui.',
+    'Observation DG: délai noté, suivre de près et garder une trace.',
   ],
   finance: [
     'Budget confirmé, le dossier peut continuer.',
@@ -413,6 +438,67 @@ const encaissements = [
   montant,
   facture,
 }))
+
+const initialCollectionCases: CollectionCase[] = [
+  {
+    id: 'REC-2024-088',
+    client: 'Client A',
+    societe: 'TBTrade',
+    commercial: 'Nadia Saidi',
+    totalDue: 5000,
+    assignedAmount: 2500,
+    recoveredAmount: 1000,
+    currentDueDate: '25/05/2024',
+    nextPromiseDate: '25/08/2024',
+    clientComment: 'Le client demande de régler le reste dans 3 mois.',
+    status: 'Promesse client',
+    observations: [
+      {
+        id: 1,
+        message: 'Accélérer le recouvrement client, ne pas attendre 3 mois si possible.',
+        urgency: 'Urgent',
+        requestedDate: '30/05/2024',
+        status: 'Non lue',
+      },
+    ],
+  },
+  {
+    id: 'REC-2024-091',
+    client: 'Client D',
+    societe: 'TBRetail',
+    commercial: 'Nadia Saidi',
+    totalDue: 85000,
+    assignedAmount: 40000,
+    recoveredAmount: 40000,
+    currentDueDate: '24/05/2024',
+    nextPromiseDate: '',
+    clientComment: 'Échéance actuelle recouvrée.',
+    status: 'Recouvré',
+    observations: [],
+  },
+  {
+    id: 'REC-2024-094',
+    client: 'Client B',
+    societe: 'TBRetail',
+    commercial: 'Nadia Saidi',
+    totalDue: 32000,
+    assignedAmount: 16000,
+    recoveredAmount: 0,
+    currentDueDate: '27/05/2024',
+    nextPromiseDate: '03/06/2024',
+    clientComment: 'Client à relancer après confirmation comptabilité.',
+    status: 'À accélérer',
+    observations: [
+      {
+        id: 2,
+        message: 'Relancer aujourd’hui et confirmer une date ferme.',
+        urgency: 'Critique',
+        requestedDate: '23/05/2024',
+        status: 'Lue',
+      },
+    ],
+  },
+]
 
 const decaissements = [
   ['22/05/2024', 'PAY-2024-045', 'Fournisseur A', 'TBTrade', 'Virement bancaire', '60 000', 'FAC-2024-1258'],
@@ -656,8 +742,8 @@ function App() {
         <section className="page" data-accent={current.color}>
           {active === 'dashboard' && <Dashboard filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} onOpenApproWorkflow={openApproWorkflow} />}
           {active === 'fnr' && <FNR filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
-          {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
-          {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
+          {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
+          {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
           {active === 'tresorerie' && <Tresorerie onAction={setMessage} />}
           {active === 'stocks' && <Stocks filters={filters} onFiltersChange={setFilters} onAction={setMessage} stocks={stocks} workflowCases={workflowCases} user={sessionUser} onCreateStockAlert={createStockAlert} onThresholdChange={updateStockThreshold} onOpenApproWorkflow={openApproWorkflow} />}
           {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} />}
@@ -988,15 +1074,107 @@ function Cashflow({
   filters,
   onFiltersChange,
   onAction,
+  user,
 }: {
   type: 'encaissements' | 'decaissements'
   filters: FilterState
   onFiltersChange: (filters: FilterState) => void
   onAction: (message: string) => void
+  user: UserAccount
 }) {
   const isIncome = type === 'encaissements'
   const sourceRows: Array<Record<string, ReactNode>> = isIncome ? encaissements : decaissements
   const rows = useFilteredRows(sourceRows, filters)
+  const [collectionCases, setCollectionCases] = useState(initialCollectionCases)
+  const [collectionDrafts, setCollectionDrafts] = useState(() =>
+    Object.fromEntries(initialCollectionCases.map((item) => [
+      item.id,
+      {
+        recoveredAmount: String(item.recoveredAmount),
+        nextPromiseDate: item.nextPromiseDate,
+        clientComment: item.clientComment,
+        observation: 'Accélérer le recouvrement client.',
+        requestedDate: item.currentDueDate,
+        urgency: 'Urgent' as DgObservation['urgency'],
+      },
+    ])),
+  )
+  const filteredCollectionCases = useMemo(() => {
+    const query = filters.query.trim().toLowerCase()
+    return collectionCases.filter((item) => {
+      const companyMatch = filters.company === 'all' || item.societe === filters.company
+      const queryMatch = !query || [item.id, item.client, item.commercial, item.status, item.clientComment].some((value) => value.toLowerCase().includes(query))
+      return companyMatch && queryMatch
+    })
+  }, [collectionCases, filters.company, filters.query])
+  const collectionTotals = useMemo(() => {
+    const totalDue = filteredCollectionCases.reduce((sum, item) => sum + item.totalDue, 0)
+    const assigned = filteredCollectionCases.reduce((sum, item) => sum + item.assignedAmount, 0)
+    const recovered = filteredCollectionCases.reduce((sum, item) => sum + item.recoveredAmount, 0)
+    const remaining = filteredCollectionCases.reduce((sum, item) => sum + getCollectionRemaining(item), 0)
+    return { totalDue, assigned, recovered, remaining }
+  }, [filteredCollectionCases])
+
+  const updateDraft = (id: string, changes: Partial<typeof collectionDrafts[string]>) => {
+    setCollectionDrafts({
+      ...collectionDrafts,
+      [id]: {
+        ...collectionDrafts[id],
+        ...changes,
+      },
+    })
+  }
+
+  const saveRecovery = (id: string) => {
+    const draft = collectionDrafts[id]
+    const amount = Number(draft.recoveredAmount.replace(/[^\d]/g, '')) || 0
+    const target = collectionCases.find((item) => item.id === id)
+    if (!target) return
+    const remaining = Math.max(0, target.assignedAmount - amount)
+    if (remaining > 0 && (!draft.nextPromiseDate.trim() || !draft.clientComment.trim())) {
+      onAction('Recouvrement partiel: le commercial doit préciser la date promise et le commentaire client.')
+      return
+    }
+    setCollectionCases(collectionCases.map((item) => item.id === id
+      ? {
+          ...item,
+          recoveredAmount: Math.min(amount, item.assignedAmount),
+          nextPromiseDate: remaining > 0 ? draft.nextPromiseDate : '',
+          clientComment: draft.clientComment,
+          status: remaining === 0 ? 'Recouvré' : 'Promesse client',
+          observations: item.observations.map((observation) => observation.status === 'Non lue' ? { ...observation, status: 'Lue' as const } : observation),
+        }
+      : item))
+    onAction(remaining === 0
+      ? `Recouvrement clôturé pour ${target.client}.`
+      : `Recouvrement partiel enregistré pour ${target.client}: reste ${formatNumber(remaining)} TND, prochaine promesse ${draft.nextPromiseDate}.`)
+  }
+
+  const sendDgObservation = (id: string) => {
+    const draft = collectionDrafts[id]
+    if (!draft.observation.trim()) {
+      onAction('Observation DG vide: ajoutez une remarque avant notification.')
+      return
+    }
+    const target = collectionCases.find((item) => item.id === id)
+    setCollectionCases(collectionCases.map((item) => item.id === id
+      ? {
+          ...item,
+          status: draft.urgency === 'Critique' ? 'À accélérer' : item.status,
+          observations: [
+            ...item.observations,
+            {
+              id: Date.now(),
+              message: draft.observation,
+              urgency: draft.urgency,
+              requestedDate: draft.requestedDate,
+              status: 'Non lue',
+            },
+          ],
+        }
+      : item))
+    onAction(`Observation DG envoyée au commercial${target ? ` pour ${target.client}` : ''}.`)
+  }
 
   return (
     <>
@@ -1032,6 +1210,17 @@ function Cashflow({
               ]
         }
       />
+      {isIncome && (
+        <CommercialRecovery
+          cases={filteredCollectionCases}
+          totals={collectionTotals}
+          drafts={collectionDrafts}
+          user={user}
+          onDraftChange={updateDraft}
+          onSaveRecovery={saveRecovery}
+          onSendObservation={sendDgObservation}
+        />
+      )}
       <DataTable
         emptyLabel="Aucune opération ne correspond aux filtres."
         columns={
@@ -1058,6 +1247,167 @@ function Cashflow({
         rows={rows}
       />
     </>
+  )
+}
+
+function CommercialRecovery({
+  cases,
+  totals,
+  drafts,
+  user,
+  onDraftChange,
+  onSaveRecovery,
+  onSendObservation,
+}: {
+  cases: CollectionCase[]
+  totals: { totalDue: number; assigned: number; recovered: number; remaining: number }
+  drafts: Record<string, {
+    recoveredAmount: string
+    nextPromiseDate: string
+    clientComment: string
+    observation: string
+    requestedDate: string
+    urgency: DgObservation['urgency']
+  }>
+  user: UserAccount
+  onDraftChange: (id: string, changes: Partial<{
+    recoveredAmount: string
+    nextPromiseDate: string
+    clientComment: string
+    observation: string
+    requestedDate: string
+    urgency: DgObservation['urgency']
+  }>) => void
+  onSaveRecovery: (id: string) => void
+  onSendObservation: (id: string) => void
+}) {
+  const canDeclareRecovery = user.role === 'commercial' || user.role === 'dg'
+  const canObserve = user.role === 'dg'
+
+  return (
+    <section className="recovery-section">
+      <div className="recovery-header">
+        <div>
+          <span className="eyebrow">Recouvrement commercial</span>
+          <h2>FNR clients, promesses et observations DG</h2>
+        </div>
+        <Status value={`${cases.length} dossier(s)`} />
+      </div>
+      <div className="recovery-kpis">
+        <article>
+          <ReceiptText size={17} />
+          <span>Total client</span>
+          <strong>{formatNumber(totals.totalDue)} TND</strong>
+        </article>
+        <article>
+          <ClipboardCheck size={17} />
+          <span>Assigné à recouvrer</span>
+          <strong>{formatNumber(totals.assigned)} TND</strong>
+        </article>
+        <article>
+          <WalletCards size={17} />
+          <span>Recouvré</span>
+          <strong>{formatNumber(totals.recovered)} TND</strong>
+        </article>
+        <article>
+          <CalendarDays size={17} />
+          <span>Reste échéance</span>
+          <strong>{formatNumber(totals.remaining)} TND</strong>
+        </article>
+      </div>
+      <div className="recovery-grid">
+        {cases.map((item) => {
+          const remainingAssigned = getCollectionRemaining(item)
+          const remainingTotal = Math.max(0, item.totalDue - item.recoveredAmount)
+          const draft = drafts[item.id]
+          const latestObservation = item.observations.at(-1)
+
+          return (
+            <article className="recovery-card" key={item.id}>
+              <header>
+                <div>
+                  <span className="eyebrow">{item.id} - {item.societe}</span>
+                  <h3>{item.client}</h3>
+                  <p>{item.commercial} - échéance actuelle {item.currentDueDate}</p>
+                </div>
+                <Status value={item.status} />
+              </header>
+              <div className="recovery-amounts">
+                <span><b>{formatNumber(item.totalDue)} TND</b>Total client</span>
+                <span><b>{formatNumber(item.assignedAmount)} TND</b>À recouvrer</span>
+                <span><b>{formatNumber(item.recoveredAmount)} TND</b>Recouvré</span>
+                <span><b>{formatNumber(remainingAssigned)} TND</b>Reste échéance</span>
+              </div>
+              <div className="promise-strip">
+                <CalendarDays size={15} />
+                <span>
+                  <strong>{remainingAssigned > 0 ? `Promesse client: ${item.nextPromiseDate || 'à préciser'}` : 'Échéance recouvrée'}</strong>
+                  Reste total client: {formatNumber(remainingTotal)} TND
+                </span>
+              </div>
+              <p className="muted">{item.clientComment}</p>
+              {latestObservation && (
+                <div className="dg-observation">
+                  <MessageSquareText size={15} />
+                  <span>
+                    <strong>Observation DG - {latestObservation.urgency}</strong>
+                    {latestObservation.message}
+                    <small>Souhaité avant: {latestObservation.requestedDate} - {latestObservation.status}</small>
+                  </span>
+                </div>
+              )}
+              {canDeclareRecovery && (
+                <form className="recovery-form" onSubmit={(event) => {
+                  event.preventDefault()
+                  onSaveRecovery(item.id)
+                }}>
+                  <label>
+                    Montant recouvré
+                    <input value={draft.recoveredAmount} onChange={(event) => onDraftChange(item.id, { recoveredAmount: event.target.value })} />
+                  </label>
+                  <label>
+                    Prochaine promesse
+                    <input value={draft.nextPromiseDate} onChange={(event) => onDraftChange(item.id, { nextPromiseDate: event.target.value })} />
+                  </label>
+                  <label>
+                    Commentaire client
+                    <input value={draft.clientComment} onChange={(event) => onDraftChange(item.id, { clientComment: event.target.value })} />
+                  </label>
+                  <button className="primary-action" type="submit">
+                    <ClipboardCheck size={15} />
+                    Déclarer
+                  </button>
+                </form>
+              )}
+              {canObserve && (
+                <div className="dg-observation-form">
+                  <label>
+                    Observation DG
+                    <input value={draft.observation} onChange={(event) => onDraftChange(item.id, { observation: event.target.value })} />
+                  </label>
+                  <label>
+                    Urgence
+                    <select value={draft.urgency} onChange={(event) => onDraftChange(item.id, { urgency: event.target.value as DgObservation['urgency'] })}>
+                      <option>Normal</option>
+                      <option>Urgent</option>
+                      <option>Critique</option>
+                    </select>
+                  </label>
+                  <label>
+                    Date souhaitée
+                    <input value={draft.requestedDate} onChange={(event) => onDraftChange(item.id, { requestedDate: event.target.value })} />
+                  </label>
+                  <button className="secondary-action" type="button" onClick={() => onSendObservation(item.id)}>
+                    <Send size={15} />
+                    Observer
+                  </button>
+                </div>
+              )}
+            </article>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 
@@ -1489,7 +1839,7 @@ function Taches({
               from: 'dg' as const,
               to: item.currentRole,
               sentAt: 'Maintenant',
-              message: `Décision DG: dossier ${item.id} obligatoire en priorité avant tous les autres.`,
+              message: `Observation DG: dossier ${item.id} à traiter en priorité avant tous les autres.`,
               priorityDecision: 'forced' as const,
               kind: 'dg-alert' as const,
             },
@@ -1497,7 +1847,7 @@ function Taches({
         }
       : item)
     setWorkflowCases(updated)
-    onAction('Décision DG enregistrée: dossier obligatoire en priorité avant les autres.')
+    onAction('Observation DG enregistrée: dossier obligatoire en priorité avant les autres.')
   }
 
   const acceptDelay = (caseId: string) => {
@@ -1505,21 +1855,21 @@ function Taches({
       ? {
           ...item,
           alerts: [
-            ...item.alerts.map((alert, index) => index === item.alerts.length - 1 ? { ...alert, priorityDecision: 'accepted' as const } : alert),
+            ...item.alerts.map((alert, index) => index === item.alerts.length - 1 ? { ...alert, priorityDecision: 'observed' as const } : alert),
             {
               id: Date.now(),
               from: 'dg' as const,
               to: item.currentRole,
               sentAt: 'Maintenant',
-              message: `Décision DG: délai proposé accepté pour ${item.id}.`,
-              priorityDecision: 'accepted' as const,
-              kind: 'dg-alert' as const,
+              message: `Observation DG: délai proposé noté pour ${item.id}, suivi à maintenir.`,
+              priorityDecision: 'observed' as const,
+              kind: 'dg-observation' as const,
             },
           ],
         }
       : item)
     setWorkflowCases(updated)
-    onAction('Délai proposé accepté par la Direction Générale.')
+    onAction('Observation DG enregistrée sur le délai proposé.')
   }
 
   const completeStep = (caseId: string) => {
@@ -1801,7 +2151,7 @@ function WorkflowActionHub({
       <div className="action-hub-title">
         <div>
           <span className="eyebrow">À faire maintenant</span>
-          <h2>{user.role === 'dg' ? 'Décisions et relances DG' : `Actions ${roleLabels[user.role]}`}</h2>
+          <h2>{user.role === 'dg' ? 'Observations et relances DG' : `Actions ${roleLabels[user.role]}`}</h2>
         </div>
         <Status value={`${actionCases.length} action(s)`} />
       </div>
@@ -2230,7 +2580,7 @@ function WorkflowCaseCard({
                 <strong>{roleLabels[alert.from]} vers {roleLabels[alert.to]} - {alert.sentAt}</strong>
                 <p>{alert.message}</p>
                 {alert.response && <small>Réponse: {alert.response} Traitement proposé: {alert.promisedAt}</small>}
-                {alert.priorityDecision === 'accepted' && <Status value="Délai accepté" />}
+                {alert.priorityDecision === 'observed' && <Status value="Délai noté" />}
                 {alert.priorityDecision === 'forced' && <Status value="Priorité obligatoire" />}
               </div>
             </article>
@@ -2255,7 +2605,7 @@ function WorkflowCaseCard({
               <Bell size={15} />
               Alerter {roleLabels[item.currentRole]} - 3h
             </button>
-            {lastReply?.promisedAt && <button className="secondary-action" type="button" onClick={onAcceptDelay}>Accepter le délai</button>}
+            {lastReply?.promisedAt && <button className="secondary-action" type="button" onClick={onAcceptDelay}>Noter le délai</button>}
             {lastReply?.promisedAt && <button className="secondary-action danger" type="button" onClick={onForcePriority}>Priorité obligatoire</button>}
           </div>
           <QuickTemplateBar
@@ -2278,7 +2628,7 @@ function WorkflowCaseCard({
             </label>
             <button className="secondary-action" type="button" onClick={onDgMessage}>
               <Send size={15} />
-              Envoyer message
+              Envoyer observation
             </button>
           </div>
         </div>
@@ -2778,13 +3128,17 @@ function DataTable({
 function Status({ value }: { value: ReactNode }) {
   const text = String(value)
   const className = useMemo<StatusTone>(() => {
-    if (['En retard', 'Haute', 'Urgent', 'Bloqué', 'Rupture', 'PDF', 'Suspendu', 'Priorité obligatoire', 'Hors SLA', 'Critique', 'Action obligatoire', 'Blocage rouge DG', 'Escalade immédiate'].includes(text)) return 'danger'
-    if (['À échéance', 'Moyenne', 'Faible stock', 'Délai accepté', 'À surveiller', 'Relance automatique'].includes(text)) return 'warning'
-    if (['À venir', 'En cours', 'Excel', 'Direction Générale', 'Finance', 'Comptabilité', 'Approvisionnement', 'Commercial', 'Information', 'Réponse reçue'].includes(text) || text.startsWith('SLA ')) return 'info'
+    if (['En retard', 'Haute', 'Urgent', 'Bloqué', 'Rupture', 'PDF', 'Suspendu', 'Priorité obligatoire', 'Hors SLA', 'Critique', 'Action obligatoire', 'Blocage rouge DG', 'Escalade immédiate', 'À accélérer', 'Non lue'].includes(text)) return 'danger'
+    if (['À échéance', 'Moyenne', 'Faible stock', 'Délai noté', 'À surveiller', 'Relance automatique', 'Promesse client', 'Partiel'].includes(text)) return 'warning'
+    if (['À venir', 'En cours', 'Excel', 'Direction Générale', 'Finance', 'Comptabilité', 'Approvisionnement', 'Commercial', 'Information', 'Réponse reçue', 'À recouvrer', 'Lue'].includes(text) || text.startsWith('SLA ')) return 'info'
     return 'success'
   }, [text])
 
   return <span className={`status ${className}`}>{text}</span>
+}
+
+function getCollectionRemaining(item: CollectionCase) {
+  return Math.max(0, item.assignedAmount - item.recoveredAmount)
 }
 
 function RowActions({ label, onAction }: { label: string; onAction: (message: string) => void }) {
