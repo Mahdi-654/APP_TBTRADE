@@ -40,6 +40,7 @@ import {
   Users,
   WalletCards,
   Workflow,
+  X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { ElementType, FormEvent, ReactNode } from 'react'
@@ -281,14 +282,6 @@ const demoCredentials = [
 
 const workflowRoles: Role[] = ['finance', 'compta', 'commercial', 'appro']
 
-const departmentLiaisons: Array<{ from: Role; to: Role; trigger: string; action: string }> = [
-  { from: 'dg', to: 'appro', trigger: 'Stock inférieur au seuil', action: 'Observer la passation de commande et suivre la réponse Appro.' },
-  { from: 'appro', to: 'finance', trigger: 'Commande fournisseur à engager', action: 'Confirmer budget, disponibilité paiement et priorité fournisseur.' },
-  { from: 'finance', to: 'compta', trigger: 'Paiement ou financement validé', action: 'Contrôler facture, pièces justificatives et statut FNR.' },
-  { from: 'compta', to: 'commercial', trigger: 'Impact client ou recouvrement', action: 'Informer le commercial sur blocage, relance ou disponibilité.' },
-  { from: 'commercial', to: 'dg', trigger: 'Risque client ou retard recouvrement', action: 'Remonter promesse client, urgence ou conflit de priorité à la Direction.' },
-]
-
 const roleCapabilities: Record<Role, string> = {
   dg: 'Supervision globale, observations, alertes et suivi des priorités.',
   finance: 'Trésorerie, financement fournisseur, disponibilité bancaire et paiements prioritaires.',
@@ -303,34 +296,6 @@ const departmentSlaHours: Record<Role, number> = {
   compta: 4,
   appro: 3,
   commercial: 6,
-}
-
-const quickMessageTemplates: Record<Role, string[]> = {
-  dg: [
-    'Observation DG: accélérer le traitement et confirmer votre action.',
-    'Observation DG: priorité client, merci de relancer aujourd’hui.',
-    'Observation DG: délai noté, suivre de près et garder une trace.',
-  ],
-  finance: [
-    'Budget confirmé, le dossier peut continuer.',
-    'Budget insuffisant, décision DG nécessaire.',
-    'Paiement possible après contrôle des pièces.',
-  ],
-  compta: [
-    'Pièce manquante, merci de compléter le dossier.',
-    'Facture contrôlée, dossier conforme.',
-    'FNR bloquée, arbitrage DG demandé.',
-  ],
-  appro: [
-    'Commande lancée auprès du fournisseur.',
-    'Fournisseur à confirmer avant commande.',
-    'Stock critique, passation urgente en cours.',
-  ],
-  commercial: [
-    'Client informé, retour attendu aujourd’hui.',
-    'Risque client détecté, décision DG demandée.',
-    'Impact vente confirmé, dossier prioritaire.',
-  ],
 }
 
 const getPrimaryUserForRole = (role: Role, accounts = initialUsers) => accounts.find((user) => user.role === role && user.status === 'Actif') ?? accounts[0]
@@ -1796,13 +1761,9 @@ function Taches({
   onDepartmentFocusChange: (role: Role | 'all') => void
 }) {
   const [activeTab, setActiveTab] = useState('Tous')
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [openedCaseId, setOpenedCaseId] = useState<string | null>(null)
   const [reply, setReply] = useState('Je vais le faire, sinon je propose un traitement dès que je suis disponible.')
   const [promisedAt, setPromisedAt] = useState('Aujourd’hui 14:30')
-  const [departmentMessage, setDepartmentMessage] = useState('Merci de me confirmer les pièces manquantes pour avancer sur ce paiement.')
-  const [departmentRecipient, setDepartmentRecipient] = useState<Role>('dg')
-  const [dgMessage, setDgMessage] = useState('Merci de traiter ce dossier en priorité et de répondre avec un engagement horaire.')
-  const [dgRecipient, setDgRecipient] = useState<Role>('finance')
   const [draft, setDraft] = useState({
     title: 'Financer l’appro fournisseur',
     supplier: 'Fournisseur à préciser',
@@ -1828,11 +1789,10 @@ function Taches({
     if (activeTab === 'Sans réponse') {
       return departmentScoped.filter((item) => hasPendingAnswer(item, user))
     }
-    const filtered = departmentScoped.filter((item) => item.status === activeTab)
-    return selectedCaseId ? [...filtered].sort((a, b) => Number(b.id === selectedCaseId) - Number(a.id === selectedCaseId)) : filtered
-  }, [activeTab, departmentFocus, selectedCaseId, user, workflowCases])
+    return departmentScoped.filter((item) => item.status === activeTab)
+  }, [activeTab, departmentFocus, user, workflowCases])
+  const openedCase = openedCaseId ? workflowCases.find((item) => item.id === openedCaseId) ?? null : null
 
-  const tabs = ['Tous', 'À traiter', 'Urgent', 'Sans réponse', 'En cours', 'Bloqué', 'Terminé']
   const inboxItems = workflowCases.flatMap((item) =>
     item.alerts
       .filter((alert) => alert.to === user.role || (user.role === 'dg' && (alert.to === 'dg' || alert.response)))
@@ -1949,73 +1909,6 @@ function Taches({
     onAction(`Réponse transmise à la DG avec engagement: ${promisedAt}.`)
   }
 
-  const sendDepartmentMessage = (caseId: string) => {
-    const updated = workflowCases.map((item) => {
-      if (item.id !== caseId) return item
-      return {
-        ...item,
-        alerts: [
-          ...item.alerts,
-          {
-            id: Date.now(),
-            from: user.role,
-            to: departmentRecipient,
-            sentAt: 'Maintenant',
-            message: departmentMessage,
-            kind: 'department-message' as const,
-          },
-        ],
-      }
-    })
-    setWorkflowCases(updated)
-    onAction('Message de coordination envoyé dans le dossier.')
-  }
-
-  const forcePriority = (caseId: string) => {
-    const updated = workflowCases.map((item) => item.id === caseId
-      ? {
-          ...item,
-          priority: 'Urgent' as const,
-          alerts: [
-            ...item.alerts.map((alert, index) => index === item.alerts.length - 1 ? { ...alert, priorityDecision: 'forced' as const } : alert),
-            {
-              id: Date.now(),
-              from: 'dg' as const,
-              to: item.currentRole,
-              sentAt: 'Maintenant',
-              message: `Observation DG: dossier ${item.id} à traiter en priorité avant tous les autres.`,
-              priorityDecision: 'forced' as const,
-              kind: 'dg-alert' as const,
-            },
-          ],
-        }
-      : item)
-    setWorkflowCases(updated)
-    onAction('Observation DG enregistrée: dossier obligatoire en priorité avant les autres.')
-  }
-
-  const acceptDelay = (caseId: string) => {
-    const updated = workflowCases.map((item) => item.id === caseId
-      ? {
-          ...item,
-          alerts: [
-            ...item.alerts.map((alert, index) => index === item.alerts.length - 1 ? { ...alert, priorityDecision: 'observed' as const } : alert),
-            {
-              id: Date.now(),
-              from: 'dg' as const,
-              to: item.currentRole,
-              sentAt: 'Maintenant',
-              message: `Observation DG: délai proposé noté pour ${item.id}, suivi à maintenir.`,
-              priorityDecision: 'observed' as const,
-              kind: 'dg-observation' as const,
-            },
-          ],
-        }
-      : item)
-    setWorkflowCases(updated)
-    onAction('Observation DG enregistrée sur le délai proposé.')
-  }
-
   const completeStep = (caseId: string) => {
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId || item.currentRole !== user.role) return item
@@ -2057,116 +1950,51 @@ function Taches({
     onAction(`Étape validée pour ${caseId}. Le dossier avance dans le workflow.`)
   }
 
-  const sendDgMessage = (caseId: string) => {
-    const updated = workflowCases.map((item) => item.id === caseId
-      ? {
-          ...item,
-          alerts: [
-            ...item.alerts,
-            {
-              id: Date.now(),
-              from: 'dg' as const,
-              to: dgRecipient,
-              sentAt: 'Maintenant',
-              message: dgMessage,
-              kind: 'dg-alert' as const,
-            },
-          ],
-        }
-      : item)
+  const transferCase = (caseId: string, nextRole: Role) => {
+    const nextOwner = getPrimaryUserForRole(nextRole, accounts)
+    const updated = workflowCases.map((item) => {
+      if (item.id !== caseId) return item
+      return {
+        ...item,
+        currentRole: nextRole,
+        owner: nextOwner.name,
+        status: 'En cours' as const,
+        steps: workflowRoles.map((role) => ({
+          role,
+          label: roleLabels[role],
+          status: role === nextRole ? 'active' as const : item.steps.some((step) => step.role === role && step.status === 'done') ? 'done' as const : 'waiting' as const,
+          note: role === nextRole ? `Dossier transféré à ${roleLabels[role]}` : `Disponible si la DG le transfère à ${roleLabels[role]}`,
+        })),
+        alerts: [
+          ...item.alerts,
+          {
+            id: Date.now(),
+            from: 'dg' as const,
+            to: nextRole,
+            sentAt: 'Maintenant',
+            message: `Dossier transféré par la DG vers ${roleLabels[nextRole]}: ${item.title}.`,
+            kind: 'dg-alert' as const,
+          },
+        ],
+      }
+    })
     setWorkflowCases(updated)
-    onAction(`Message DG envoyé à ${roleLabels[dgRecipient]} pour ${caseId}.`)
+    onDepartmentFocusChange(nextRole)
+    setActiveTab('Tous')
+    setOpenedCaseId(caseId)
+    onAction(`Dossier ${caseId} transféré vers ${roleLabels[nextRole]}.`)
   }
 
   return (
     <>
-      <NotificationCenter
-        items={inboxItems}
-        user={user}
-        onAction={onAction}
-        onOpenCase={(caseId) => {
-          setActiveTab('Tous')
-          onDepartmentFocusChange('all')
-          setSelectedCaseId(caseId)
-          onAction(`Dossier ${caseId} sélectionné dans la boîte de notifications.`)
-        }}
-      />
-      <WorkflowEasePanel cases={workflowCases} user={user} />
-      <WorkflowActionHub
-        cases={workflowCases}
-        user={user}
-        onOpenCase={(caseId) => {
-          setActiveTab('Tous')
-          onDepartmentFocusChange('all')
-          setSelectedCaseId(caseId)
-          onAction(`Action ouverte: ${caseId}.`)
-        }}
-      />
-      <DepartmentLiaisonPanel
-        cases={workflowCases}
-        user={user}
-        onFocus={(role) => {
-          onDepartmentFocusChange(role)
-          setActiveTab('Tous')
-          setSelectedCaseId(null)
-          onAction(`Liaison ouverte vers ${roleLabels[role]}.`)
-        }}
-      />
+      <SimpleTaskHeader cases={workflowCases} user={user} notifications={inboxItems.length} />
       {user.role === 'dg' && (
-        <section className="service-switcher" aria-label="Filtre département DG">
-          <div>
-            <span className="eyebrow">Vue service</span>
-            <strong>{departmentFocus === 'all' ? 'Tous les départements' : roleLabels[departmentFocus]}</strong>
-          </div>
-          <div className="service-buttons">
-            <button
-              className={departmentFocus === 'all' ? 'active' : ''}
-              type="button"
-              onClick={() => {
-                onDepartmentFocusChange('all')
-                setSelectedCaseId(null)
-                onAction('Vue DG complète: tous les départements affichés.')
-              }}
-            >
-              Tous services
-            </button>
-            {workflowRoles.map((role) => {
-              const count = workflowCases.filter((item) => item.currentRole === role && item.status !== 'Terminé').length
-              return (
-                <button
-                  className={departmentFocus === role ? 'active' : ''}
-                  key={role}
-                  type="button"
-                  onClick={() => {
-                    onDepartmentFocusChange(role)
-                    setSelectedCaseId(null)
-                    setActiveTab('Tous')
-                    onAction(`Vue DG filtrée sur ${roleLabels[role]}: ${count} dossier(s) en charge.`)
-                  }}
-                >
-                  {roleLabels[role]}
-                  <span>{count}</span>
-                </button>
-              )
-            })}
-          </div>
-        </section>
+        <DepartmentFilter cases={workflowCases} active={departmentFocus} onChange={(role) => {
+          onDepartmentFocusChange(role)
+          setOpenedCaseId(null)
+          onAction(role === 'all' ? 'Tous les départements affichés.' : `Dossiers ${roleLabels[role]} affichés.`)
+        }} />
       )}
-      <div className="tabs">
-        {tabs.map((tab) => (
-          <button
-            className={activeTab === tab ? 'active' : ''}
-            key={tab}
-            type="button"
-            onClick={() => {
-              setActiveTab(tab)
-              onAction(`Tâches filtrées: ${tab}.`)
-            }}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
       {user.role === 'dg' && (
         <Panel title="Attribuer une tâche DG">
           <form className="task-assignment" onSubmit={createTask}>
@@ -2207,217 +2035,287 @@ function Taches({
           </form>
         </Panel>
       )}
-      <div className="workflow-board">
-        {visibleCases.map((item) => (
-          <WorkflowCaseCard
-            item={item}
-            key={item.id}
-            user={user}
-            reply={reply}
-            promisedAt={promisedAt}
-            onReplyChange={setReply}
-            onPromisedAtChange={setPromisedAt}
-            dgMessage={dgMessage}
-            dgRecipient={dgRecipient}
-            onDgMessageChange={setDgMessage}
-            onDgRecipientChange={setDgRecipient}
-            onAlert={() => alertCase(item.id)}
-            onDgMessage={() => sendDgMessage(item.id)}
-            onReply={() => replyToDg(item.id)}
-            departmentMessage={departmentMessage}
-            departmentRecipient={departmentRecipient}
-            onDepartmentMessageChange={setDepartmentMessage}
-            onDepartmentRecipientChange={setDepartmentRecipient}
-            onSendDepartmentMessage={() => sendDepartmentMessage(item.id)}
-            onComplete={() => completeStep(item.id)}
-            onForcePriority={() => forcePriority(item.id)}
-            onAcceptDelay={() => acceptDelay(item.id)}
-            selected={item.id === selectedCaseId}
-          />
-        ))}
-        {visibleCases.length === 0 && <Panel title="Aucun dossier"><p className="muted">Aucune tâche ne correspond à ce filtre.</p></Panel>}
-      </div>
+      <SimpleDepartmentBoard
+        cases={visibleCases}
+        user={user}
+        onOpen={(item) => setOpenedCaseId(item.id)}
+      />
+      {openedCase && (
+        <DossierDetailsModal
+          item={openedCase}
+          user={user}
+        reply={reply}
+        promisedAt={promisedAt}
+        onReplyChange={setReply}
+        onPromisedAtChange={setPromisedAt}
+          onClose={() => setOpenedCaseId(null)}
+          onReply={() => replyToDg(openedCase.id)}
+          onComplete={() => completeStep(openedCase.id)}
+          onAlert={() => alertCase(openedCase.id)}
+          onTransfer={(nextRole) => transferCase(openedCase.id, nextRole)}
+        />
+      )}
     </>
   )
 }
 
-function WorkflowEasePanel({ cases, user }: { cases: WorkflowCase[]; user: UserAccount }) {
-  const scopedCases = getVisibleCases(cases, user).filter((item) => item.status !== 'Terminé')
-  const rankedCases = [...scopedCases].sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
-  const topCase = rankedCases[0]
-  const slaDanger = scopedCases.filter((item) => getSlaInfo(item).tone === 'danger')
-  const pending = scopedCases.filter((item) => user.role === 'dg' ? hasPendingAnswer(item, user) : item.currentRole === user.role)
+function SimpleTaskHeader({ cases, user, notifications }: { cases: WorkflowCase[]; user: UserAccount; notifications: number }) {
+  const scoped = getVisibleCases(cases, user).filter((item) => item.status !== 'Terminé')
+  const current = scoped.filter((item) => user.role === 'dg' || item.currentRole === user.role)
+  const blocked = scoped.filter((item) => item.status === 'Bloqué')
 
   return (
-    <section className="workflow-ease">
-      <div className="ease-main">
-        <span className="eyebrow">Flux simplifié</span>
-        <h2>{topCase ? getNextActionLabel(topCase, user) : 'Aucune action urgente pour cette session.'}</h2>
-        {topCase && <p>{topCase.id} - score priorité {getPriorityScore(topCase)}/100 - {getSlaInfo(topCase).detail}</p>}
+    <section className="simple-task-header">
+      <div>
+        <span className="eyebrow">Dossiers par département</span>
+        <h2>{user.role === 'dg' ? 'Choisir un dossier, puis le transférer au bon département.' : `Dossiers affectés à ${roleLabels[user.role]}.`}</h2>
+        <p>Chaque département affiche des dossiers fermés. Le bouton Ouvrir affiche une seule fiche complète en popup.</p>
       </div>
-      <div className="ease-kpis">
-        <article>
-          <Gauge size={17} />
-          <span>Priorité max</span>
-          <strong>{topCase ? `${getPriorityScore(topCase)}/100` : '0/100'}</strong>
-        </article>
-        <article>
-          <Siren size={17} />
-          <span>SLA dépassé</span>
-          <strong>{slaDanger.length}</strong>
-        </article>
-        <article>
-          <ClipboardCheck size={17} />
-          <span>À traiter</span>
-          <strong>{pending.length}</strong>
-        </article>
+      <div className="simple-task-kpis">
+        <article><strong>{current.length}</strong><span>Dossiers visibles</span></article>
+        <article><strong>{blocked.length}</strong><span>Blocages</span></article>
+        <article><strong>{notifications}</strong><span>Messages</span></article>
       </div>
     </section>
   )
 }
 
-function WorkflowActionHub({
+function DepartmentFilter({
   cases,
-  user,
-  onOpenCase,
+  active,
+  onChange,
 }: {
   cases: WorkflowCase[]
-  user: UserAccount
-  onOpenCase: (caseId: string) => void
+  active: Role | 'all'
+  onChange: (role: Role | 'all') => void
 }) {
-  const scopedCases = getVisibleCases(cases, user).filter((item) => item.status !== 'Terminé')
-  const actionCases = scopedCases
-    .filter((item) => user.role === 'dg' ? item.status === 'Bloqué' || hasPendingAnswer(item, user) : item.currentRole === user.role || hasPendingAnswer(item, user))
-    .slice(0, 4)
-
   return (
-    <section className="action-hub">
-      <div className="action-hub-title">
-        <div>
-          <span className="eyebrow">À faire maintenant</span>
-          <h2>{user.role === 'dg' ? 'Observations et relances DG' : `Actions ${roleLabels[user.role]}`}</h2>
-        </div>
-        <Status value={`${actionCases.length} action(s)`} />
-      </div>
-      <div className="action-hub-grid">
-        {actionCases.length === 0 && <p className="muted">Aucune action immédiate. Les dossiers restent visibles dans la liste complète.</p>}
-        {actionCases.map((item) => (
-          <article key={`action-${item.id}`}>
-            <span className="action-icon">
-              {item.status === 'Bloqué' ? <Siren size={17} /> : <ClipboardCheck size={17} />}
-            </span>
-            <div>
-              <strong>{getNextActionLabel(item, user)}</strong>
-              <small>{item.id} - {item.title}</small>
-            </div>
-            <button className="primary-action" type="button" onClick={() => onOpenCase(item.id)}>
-              Traiter
-            </button>
-          </article>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function DepartmentLiaisonPanel({
-  cases,
-  user,
-  onFocus,
-}: {
-  cases: WorkflowCase[]
-  user: UserAccount
-  onFocus: (role: Role) => void
-}) {
-  const visibleLiaisons = departmentLiaisons.filter((liaison) => user.role === 'dg' || liaison.from === user.role || liaison.to === user.role)
-
-  return (
-    <section className="liaison-panel">
-      <div className="liaison-header">
-        <div>
-          <span className="eyebrow">Liaisons nécessaires</span>
-          <h2>Coordination entre départements</h2>
-        </div>
-        <Status value="Flux connecté" />
-      </div>
-      <div className="liaison-grid">
-        {visibleLiaisons.map((liaison) => {
-          const activeCount = cases.filter((item) => item.status !== 'Terminé' && (item.currentRole === liaison.from || item.currentRole === liaison.to)).length
-          const hasMessages = cases.some((item) => item.alerts.some((alert) => alert.from === liaison.from && alert.to === liaison.to))
-          return (
-            <article key={`${liaison.from}-${liaison.to}`}>
-              <div className="liaison-route">
-                <strong>{roleLabels[liaison.from]}</strong>
-                <ChevronRight size={15} />
-                <strong>{roleLabels[liaison.to]}</strong>
-              </div>
-              <span>{liaison.trigger}</span>
-              <p>{liaison.action}</p>
-              <div className="liaison-footer">
-                <Status value={hasMessages ? 'Déjà utilisé' : 'À activer si besoin'} />
-                <small>{activeCount} dossier(s) liés</small>
-                <button className="secondary-action" type="button" onClick={() => onFocus(liaison.to === 'dg' ? liaison.from : liaison.to)}>
-                  Voir
-                </button>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function NotificationCenter({
-  items,
-  user,
-  onAction,
-  onOpenCase,
-}: {
-  items: Array<{ case: WorkflowCase; alert: WorkflowAlert }>
-  user: UserAccount
-  onAction: (message: string) => void
-  onOpenCase: (caseId: string) => void
-}) {
-  const latest = [...items].reverse().slice(0, 5)
-
-  return (
-    <Panel title={user.role === 'dg' ? 'Boîte DG - retours départements' : 'Mes notifications de travail'}>
-      <div className="inbox-list">
-        {latest.length === 0 && <p className="muted">Aucune notification pour cette session.</p>}
-        {latest.map(({ case: item, alert }) => (
-          <article key={`${item.id}-${alert.id}`}>
-            <div className="inbox-icon">
-              {alert.kind === 'reply' ? <MessageSquareText size={17} /> : <Bell size={17} />}
-            </div>
-            <div>
-              <span className="eyebrow">{item.id} - {roleLabels[alert.from]} vers {roleLabels[alert.to]}</span>
-              <strong>{item.title}</strong>
-              <p>{alert.response ?? alert.message}</p>
-              <Status value={getNotificationType(alert)} />
-              {alert.promisedAt && <small>Engagement proposé: {alert.promisedAt}</small>}
-            </div>
-            <button className="secondary-action" type="button" onClick={() => {
-              onOpenCase(item.id)
-              onAction(`Notification ouverte: ${item.id}.`)
-            }}>
-              Ouvrir
-            </button>
-          </article>
-        ))}
-      </div>
-    </Panel>
-  )
-}
-
-function QuickTemplateBar({ templates, onPick }: { templates: string[]; onPick: (template: string) => void }) {
-  return (
-    <div className="quick-template-bar">
-      {templates.map((template) => (
-        <button key={template} type="button" onClick={() => onPick(template)}>
-          {template}
+    <section className="department-filter">
+      <button className={active === 'all' ? 'active' : ''} type="button" onClick={() => onChange('all')}>
+        Tous les dossiers
+        <span>{cases.filter((item) => item.status !== 'Terminé').length}</span>
+      </button>
+      {workflowRoles.map((role) => (
+        <button className={active === role ? 'active' : ''} key={role} type="button" onClick={() => onChange(role)}>
+          {roleLabels[role]}
+          <span>{cases.filter((item) => item.currentRole === role && item.status !== 'Terminé').length}</span>
         </button>
       ))}
+    </section>
+  )
+}
+
+function SimpleDepartmentBoard({
+  cases,
+  user,
+  onOpen,
+}: {
+  cases: WorkflowCase[]
+  user: UserAccount
+  onOpen: (item: WorkflowCase) => void
+}) {
+  const departments = user.role === 'dg' ? workflowRoles : [user.role]
+
+  return (
+    <div className="department-board">
+      {departments.map((role) => {
+        const departmentCases = cases.filter((item) => item.currentRole === role && item.status !== 'Terminé')
+        return (
+          <section className="department-column" key={role}>
+            <header>
+              <strong>{roleLabels[role]}</strong>
+              <Status value={`${departmentCases.length} dossier(s)`} />
+            </header>
+            <div className="department-dossiers">
+              {departmentCases.map((item) => (
+                <SimpleDossierBox
+                  item={item}
+                  key={item.id}
+                  onOpen={() => onOpen(item)}
+                />
+              ))}
+              {departmentCases.length === 0 && <p className="muted">Aucun dossier dans ce département.</p>}
+            </div>
+          </section>
+        )
+      })}
+      {cases.length === 0 && <Panel title="Aucun dossier"><p className="muted">Aucun dossier à afficher.</p></Panel>}
+    </div>
+  )
+}
+
+function SimpleDossierBox({
+  item,
+  onOpen,
+}: {
+  item: WorkflowCase
+  onOpen: () => void
+}) {
+  const latestMessage = item.alerts.at(-1)
+
+  return (
+    <article className="dossier-box">
+      <button className="dossier-open-area" type="button" onClick={onOpen}>
+        <span>
+          <span className="eyebrow">{item.id}</span>
+          <h3>{item.title}</h3>
+          <small>{item.supplier} - {item.amount} - {item.due}</small>
+          {latestMessage && <em>{latestMessage.message}</em>}
+        </span>
+        <span className="dossier-quick-status">
+          <Status value={item.priority} />
+          <Status value={item.status} />
+        </span>
+      </button>
+      <button className="secondary-action dossier-open-button" type="button" onClick={onOpen}>
+        Ouvrir
+      </button>
+    </article>
+  )
+}
+
+function DossierDetailsModal({
+  item,
+  user,
+  reply,
+  promisedAt,
+  onReplyChange,
+  onPromisedAtChange,
+  onClose,
+  onReply,
+  onComplete,
+  onAlert,
+  onTransfer,
+}: {
+  item: WorkflowCase
+  user: UserAccount
+  reply: string
+  promisedAt: string
+  onReplyChange: (value: string) => void
+  onPromisedAtChange: (value: string) => void
+  onClose: () => void
+  onReply: () => void
+  onComplete: () => void
+  onAlert: () => void
+  onTransfer: (role: Role) => void
+}) {
+  const isDg = user.role === 'dg'
+  const isCurrentOwner = item.currentRole === user.role
+  const sla = getSlaInfo(item)
+
+  return (
+    <div className="dossier-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="dossier-modal" role="dialog" aria-modal="true" aria-labelledby="dossier-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="dossier-modal-header">
+          <div>
+            <span className="eyebrow">{item.id} - {roleLabels[item.currentRole]}</span>
+            <h2 id="dossier-modal-title">{item.title}</h2>
+            <p>{getNextActionLabel(item, user)}</p>
+          </div>
+          <button className="icon-btn boxed" type="button" title="Fermer" onClick={onClose}>
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="dossier-modal-summary">
+          <article><span>Partie</span><strong>{item.supplier}</strong></article>
+          <article><span>Montant</span><strong>{item.amount}</strong></article>
+          <article><span>Échéance</span><strong>{item.due}</strong></article>
+          <article><span>Responsable</span><strong>{item.owner}</strong></article>
+          <article><span>Priorité</span><Status value={item.priority} /></article>
+          <article><span>Statut</span><Status value={item.status} /></article>
+          <article><span>SLA</span><strong>{sla.detail}</strong></article>
+          <article><span>Score</span><strong>{getPriorityScore(item)}/100</strong></article>
+        </div>
+
+        <div className="next-action-strip">
+          <span><Gauge size={15} /> Action</span>
+          <strong>{getNextActionLabel(item, user)}</strong>
+          <small>{sla.label}</small>
+        </div>
+
+        {item.id.startsWith('DOS-STK') && (
+          <div className="stock-order-note">
+            <PackageSearch size={16} />
+            <span>
+              <strong>Commande suggérée</strong>
+              {item.amount} - fournisseur: {item.supplier}
+            </span>
+          </div>
+        )}
+
+        <div className="dossier-modal-section">
+          <h3>Parcours par département</h3>
+          <div className="workflow-steps">
+            {item.steps.map((step) => (
+              <article className={`workflow-step ${step.status}`} key={step.role}>
+                <span>{roleLabels[step.role]}</span>
+                <strong>{step.label}</strong>
+                <small>{step.note}</small>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="dossier-modal-section">
+          <h3>Historique et messages</h3>
+          <div className="message-thread">
+            {item.alerts.map((alert) => (
+              <article key={alert.id}>
+                <MessageSquareText size={15} />
+                <span>
+                  <strong>{roleLabels[alert.from]} vers {roleLabels[alert.to]} - {alert.sentAt}</strong>
+                  <p>{alert.message}</p>
+                  {alert.response && <small>Réponse: {alert.response}</small>}
+                  {alert.promisedAt && <small>Engagement: {alert.promisedAt}</small>}
+                </span>
+              </article>
+            ))}
+            {item.alerts.length === 0 && <p className="muted">Aucun message enregistré.</p>}
+          </div>
+        </div>
+
+        {isDg ? (
+          <div className="dg-action-box">
+            <strong>Décision Direction Générale</strong>
+            <span>Transférer ce dossier vers un seul département.</span>
+            <div className="transfer-buttons">
+              {workflowRoles.map((role) => (
+                <button disabled={role === item.currentRole} key={role} type="button" onClick={() => onTransfer(role)}>
+                  {roleLabels[role]}
+                </button>
+              ))}
+            </div>
+            <button className="secondary-action danger" type="button" onClick={onAlert}>
+              <Bell size={15} />
+              Relancer le département actuel
+            </button>
+          </div>
+        ) : (
+          <div className="department-reply">
+            <label>
+              Réponse à la DG
+              <input value={reply} onChange={(event) => onReplyChange(event.target.value)} />
+            </label>
+            <label>
+              Engagement
+              <input value={promisedAt} onChange={(event) => onPromisedAtChange(event.target.value)} />
+            </label>
+            <div className="workflow-actions">
+              <button className="secondary-action" type="button" onClick={onReply}>
+                <Send size={15} />
+                Répondre
+              </button>
+              {isCurrentOwner && (
+                <button className="primary-action" type="button" onClick={onComplete}>
+                  <ClipboardCheck size={15} />
+                  Dossier traité
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   )
 }
@@ -2437,275 +2335,6 @@ function ModuleQuickActions({
           {label}
         </button>
       ))}
-    </div>
-  )
-}
-
-function WorkflowCaseCard({
-  item,
-  user,
-  reply,
-  promisedAt,
-  onReplyChange,
-  onPromisedAtChange,
-  dgMessage,
-  dgRecipient,
-  onDgMessageChange,
-  onDgRecipientChange,
-  onAlert,
-  onDgMessage,
-  onReply,
-  departmentMessage,
-  departmentRecipient,
-  onDepartmentMessageChange,
-  onDepartmentRecipientChange,
-  onSendDepartmentMessage,
-  onComplete,
-  onForcePriority,
-  onAcceptDelay,
-  selected,
-}: {
-  item: WorkflowCase
-  user: UserAccount
-  reply: string
-  promisedAt: string
-  onReplyChange: (value: string) => void
-  onPromisedAtChange: (value: string) => void
-  dgMessage: string
-  dgRecipient: Role
-  onDgMessageChange: (value: string) => void
-  onDgRecipientChange: (value: Role) => void
-  onAlert: () => void
-  onDgMessage: () => void
-  onReply: () => void
-  departmentMessage: string
-  departmentRecipient: Role
-  onDepartmentMessageChange: (value: string) => void
-  onDepartmentRecipientChange: (value: Role) => void
-  onSendDepartmentMessage: () => void
-  onComplete: () => void
-  onForcePriority: () => void
-  onAcceptDelay: () => void
-  selected: boolean
-}) {
-  const pendingAlert = item.alerts.findLast((alert) => alert.to === user.role && !alert.response)
-  const lastReply = item.alerts.findLast((alert) => alert.response || alert.from !== 'dg')
-  const isCurrentOwner = item.currentRole === user.role && item.status !== 'Terminé'
-  const isDg = user.role === 'dg'
-  const isClosed = item.status === 'Terminé'
-  const priorityScore = getPriorityScore(item)
-  const slaInfo = getSlaInfo(item)
-  const stockRecommendation = item.id.startsWith('DOS-STK')
-    ? {
-        quantity: item.amount,
-        supplier: item.supplier,
-      }
-    : null
-
-  return (
-    <article className={`workflow-card ${selected ? 'selected' : ''}`}>
-      <header>
-        <div>
-          <span className="eyebrow">{item.id}</span>
-          <h2>{item.title}</h2>
-          <p>{item.supplier} - {item.amount} - échéance {item.due}</p>
-        </div>
-        <div className="workflow-status">
-          <Status value={item.priority} />
-          <Status value={item.status} />
-          <Status value={slaInfo.label} />
-        </div>
-      </header>
-
-      <div className="decision-summary">
-        <article>
-          <span>Score priorité</span>
-          <strong>{priorityScore}/100</strong>
-        </article>
-        <article>
-          <span>SLA</span>
-          <strong>{slaInfo.detail}</strong>
-        </article>
-        <article>
-          <span>Escalade</span>
-          <strong>{getEscalationLabel(item)}</strong>
-        </article>
-      </div>
-
-      <div className="next-action-strip">
-        <span><Gauge size={15} /> Prochaine action</span>
-        <strong>{getNextActionLabel(item, user)}</strong>
-        <small>{isDg ? `Service attendu: ${roleLabels[item.currentRole]}` : isCurrentOwner ? 'Votre service doit agir maintenant' : `En attente de ${roleLabels[item.currentRole]}`}</small>
-      </div>
-
-      {stockRecommendation && (
-        <div className="stock-order-note">
-          <PackageSearch size={16} />
-          <span>
-            <strong>Commande suggérée</strong>
-            {stockRecommendation.quantity} - fournisseur: {stockRecommendation.supplier}
-          </span>
-        </div>
-      )}
-
-      <div className="liaison-chain" aria-label="Liaisons du dossier">
-        {item.steps.map((step, index) => (
-          <span className={step.status} key={`liaison-${item.id}-${step.role}`}>
-            {roleLabels[step.role]}
-            {index < item.steps.length - 1 && <ChevronRight size={13} />}
-          </span>
-        ))}
-      </div>
-
-      <div className="workflow-steps" aria-label="Workflow visuel">
-        {item.steps.map((step) => (
-          <div className={`workflow-step ${step.status}`} key={`${item.id}-${step.role}`}>
-            <span>{roleLabels[step.role]}</span>
-            <strong>{step.label}</strong>
-            <small>{step.note}</small>
-          </div>
-        ))}
-      </div>
-
-      <div className="workflow-meta">
-        <span><Users size={15} /> Responsable actuel: {roleLabels[item.currentRole]} ({item.owner})</span>
-        <span><Bell size={15} /> Alertes: {item.alerts.length}</span>
-      </div>
-
-      <ApiExchangeTimeline item={item} user={user} />
-
-      {item.alerts.length > 0 && (
-        <div className="message-thread">
-          {item.alerts.map((alert) => (
-            <article key={alert.id}>
-              <MessageSquareText size={15} />
-              <div>
-                <strong>{roleLabels[alert.from]} vers {roleLabels[alert.to]} - {alert.sentAt}</strong>
-                <p>{alert.message}</p>
-                {alert.response && <small>Réponse: {alert.response} Traitement proposé: {alert.promisedAt}</small>}
-                {alert.priorityDecision === 'observed' && <Status value="Délai noté" />}
-                {alert.priorityDecision === 'forced' && <Status value="Priorité obligatoire" />}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {isClosed && (
-        <div className="locked-history">
-          <LockKeyhole size={16} />
-          <span>
-            <strong>Dossier clôturé</strong>
-            Historique conservé, aucune action restante.
-          </span>
-        </div>
-      )}
-
-      {isDg && !isClosed && (
-        <div className="dg-action-box">
-          <div className="workflow-actions">
-            <button className="primary-action" type="button" onClick={onAlert}>
-              <Bell size={15} />
-              Alerter {roleLabels[item.currentRole]} - 3h
-            </button>
-            {lastReply?.promisedAt && <button className="secondary-action" type="button" onClick={onAcceptDelay}>Noter le délai</button>}
-            {lastReply?.promisedAt && <button className="secondary-action danger" type="button" onClick={onForcePriority}>Priorité obligatoire</button>}
-          </div>
-          <QuickTemplateBar
-            templates={quickMessageTemplates.dg}
-            onPick={(template) => {
-              onDgRecipientChange(item.currentRole)
-              onDgMessageChange(template)
-            }}
-          />
-          <div className="message-composer">
-            <label>
-              Département à notifier
-              <select value={dgRecipient} onChange={(event) => onDgRecipientChange(event.target.value as Role)}>
-                {workflowRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}
-              </select>
-            </label>
-            <label>
-              Message DG
-              <input value={dgMessage} onChange={(event) => onDgMessageChange(event.target.value)} />
-            </label>
-            <button className="secondary-action" type="button" onClick={onDgMessage}>
-              <Send size={15} />
-              Envoyer observation
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!isDg && !isClosed && (
-        <div className="department-reply">
-          {pendingAlert && <p className="muted">Notification DG reçue: {pendingAlert.message}</p>}
-          <QuickTemplateBar
-            templates={quickMessageTemplates[user.role]}
-            onPick={(template) => {
-              onReplyChange(template)
-              onDepartmentMessageChange(template)
-            }}
-          />
-          <label>
-            Réponse à la DG
-            <input value={reply} onChange={(event) => onReplyChange(event.target.value)} />
-          </label>
-          <label>
-            Date/heure proposée
-            <input value={promisedAt} onChange={(event) => onPromisedAtChange(event.target.value)} />
-          </label>
-          <div className="workflow-actions">
-            <button className="secondary-action" type="button" onClick={onReply}>
-              <Send size={15} />
-              Répondre à la DG
-            </button>
-            {isCurrentOwner && <button className="primary-action" type="button" onClick={onComplete}>
-              <ClipboardCheck size={15} />
-              Travail fait
-            </button>}
-          </div>
-          <label>
-            Message interne dossier
-            <input value={departmentMessage} onChange={(event) => onDepartmentMessageChange(event.target.value)} />
-          </label>
-          <label>
-            Destinataire
-            <select value={departmentRecipient} onChange={(event) => onDepartmentRecipientChange(event.target.value as Role)}>
-              {[ 'dg', ...workflowRoles ].filter((role) => role !== user.role).map((role) => (
-                <option key={role} value={role}>{roleLabels[role as Role]}</option>
-              ))}
-            </select>
-          </label>
-          <button className="secondary-action" type="button" onClick={onSendDepartmentMessage}>
-            <MessageSquareText size={15} />
-            Communiquer sur le dossier
-          </button>
-        </div>
-      )}
-    </article>
-  )
-}
-
-function ApiExchangeTimeline({ item, user }: { item: WorkflowCase; user: UserAccount }) {
-  const visibleAlerts = user.role === 'dg'
-    ? item.alerts
-    : item.alerts.filter((alert) => alert.to === user.role || alert.from === user.role)
-
-  return (
-    <div className="api-timeline" aria-label="Historique enregistré du dossier">
-      {visibleAlerts.slice(-4).map((alert) => (
-        <span key={`api-${item.id}-${alert.id}`}>
-          <CheckCircle2 size={13} />
-          Historique: {roleLabels[alert.from]} → {roleLabels[alert.to]}
-        </span>
-      ))}
-      {visibleAlerts.length === 0 && (
-        <span>
-          <Workflow size={13} />
-          En attente du premier échange enregistré
-        </span>
-      )}
     </div>
   )
 }
@@ -3236,22 +2865,6 @@ function getSlaInfo(item: WorkflowCase) {
   if (item.status === 'Bloqué' || score >= 82 || relances >= 3) return { label: 'Hors SLA', tone: 'danger' as StatusTone, detail: `Escalade DG requise - SLA ${hours}h` }
   if (score >= 64 || relances >= 2) return { label: 'À surveiller', tone: 'warning' as StatusTone, detail: `Relance avant dépassement - SLA ${hours}h` }
   return { label: `SLA ${hours}h`, tone: 'info' as StatusTone, detail: `Service attendu: ${roleLabels[item.currentRole]}` }
-}
-
-function getEscalationLabel(item: WorkflowCase) {
-  const sla = getSlaInfo(item)
-  const relances = item.alerts.filter((alert) => alert.to === item.currentRole && !alert.response).length
-  if (item.status === 'Terminé') return 'Aucune escalade'
-  if (sla.tone === 'danger') return relances >= 3 ? 'Blocage rouge DG' : 'Escalade immédiate'
-  if (sla.tone === 'warning') return 'Relance automatique'
-  return 'Flux normal'
-}
-
-function getNotificationType(alert: WorkflowAlert) {
-  if (alert.priorityDecision === 'forced' || alert.kind === 'stock-auto') return 'Critique'
-  if (alert.kind === 'reply' || alert.response) return 'Réponse reçue'
-  if (alert.kind === 'dg-alert') return 'Action obligatoire'
-  return 'Information'
 }
 
 function getVisibleCases(cases: WorkflowCase[], user: UserAccount) {
