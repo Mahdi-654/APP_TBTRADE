@@ -1,9 +1,7 @@
 import {
-  Activity,
   Archive,
   Banknote,
   Bell,
-  Boxes,
   Building2,
   CalendarDays,
   ChartColumnBig,
@@ -35,7 +33,6 @@ import {
   Search,
   Send,
   ShieldAlert,
-  ShieldCheck,
   Siren,
   TrendingDown,
   TrendingUp,
@@ -740,7 +737,7 @@ function App() {
           onNotifications={() => changeScreen('taches')}
         />
         <section className="page" data-accent={current.color}>
-          {active === 'dashboard' && <Dashboard filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} onOpenApproWorkflow={openApproWorkflow} />}
+          {active === 'dashboard' && <Dashboard onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} />}
           {active === 'fnr' && <FNR filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
           {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
           {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
@@ -767,48 +764,15 @@ function LoginPage({ accounts, onLogin, message }: { accounts: UserAccount[]; on
   return (
     <main className="login-page">
       <section className="login-visual" aria-label="Aperçu TB Trade">
-        <div className="login-ambient" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
         <div className="login-brand">
           <img src="/tbtrade-logo.svg" alt="TBTrade" />
-          <span>Command Center</span>
+          <span>Plateforme interne</span>
           <LockKeyhole size={15} />
         </div>
         <div className="login-hero-copy">
-          <span className="login-kicker">Pilotage DG & opérations</span>
-          <strong>Une entrée claire pour chaque service.</strong>
-          <small>Alertes stock, dossiers fournisseurs, tâches et validations restent synchronisés entre la direction et les équipes.</small>
-        </div>
-        <div className="login-command-board" aria-label="Vue opérationnelle">
-          <div className="command-board-header">
-            <span>Flux actif</span>
-            <strong>DG → Services</strong>
-          </div>
-          <div className="command-flow">
-            <article>
-              <span><ShieldCheck size={16} /></span>
-              <strong>DG</strong>
-              <small>Priorise</small>
-            </article>
-            <article>
-              <span><Boxes size={16} /></span>
-              <strong>Appro</strong>
-              <small>Commande</small>
-            </article>
-            <article>
-              <span><Workflow size={16} /></span>
-              <strong>Dossiers</strong>
-              <small>Suivi</small>
-            </article>
-          </div>
-          <div className="command-status">
-            <span><Activity size={15} /> Seuil stock contrôlé</span>
-            <span><Bell size={15} /> Notification automatique</span>
-            <span><PackageSearch size={15} /> Passation à traiter</span>
-          </div>
+          <span className="login-kicker">TBTrade</span>
+          <strong>Gestion simple des finances, stocks et tâches.</strong>
+          <small>Connexion par rôle pour accéder uniquement aux modules nécessaires.</small>
         </div>
       </section>
       <section className="login-panel">
@@ -816,7 +780,7 @@ function LoginPage({ accounts, onLogin, message }: { accounts: UserAccount[]; on
           <div className="login-panel-heading">
             <span className="eyebrow">Connexion sécurisée</span>
             <h1>Accès TB Trade</h1>
-            <p>Choisissez une session de démonstration pour entrer dans l’espace adapté à votre rôle.</p>
+            <p>Choisissez un utilisateur et entrez dans son espace.</p>
           </div>
           <form onSubmit={submit}>
             <label>
@@ -952,30 +916,23 @@ function Topbar({
 }
 
 function Dashboard({
-  filters,
-  onFiltersChange,
   onAction,
   user,
   workflowCases,
   stocks,
   onOpenDepartment,
-  onOpenApproWorkflow,
 }: {
-  filters: FilterState
-  onFiltersChange: (filters: FilterState) => void
   onAction: (message: string) => void
   user: UserAccount
   workflowCases: WorkflowCase[]
   stocks: StockRow[]
   onOpenDepartment: (role: Role) => void
-  onOpenApproWorkflow: () => void
 }) {
   const visibleCases = getVisibleCases(workflowCases, user)
   const stockAlerts = stocks.filter(isStockUnderThreshold)
   const blockedCases = user.role === 'dg'
     ? workflowCases.filter((item) => item.status === 'Bloqué')
     : visibleCases.filter((item) => item.currentRole === user.role)
-  const completedByRole = workflowCases.filter((item) => item.steps.some((step) => step.role === user.role && step.status === 'done')).length
   const pendingForRole = user.role === 'dg'
     ? workflowCases.filter((item) => item.status !== 'Terminé').length
     : workflowCases.filter((item) => item.currentRole === user.role && item.status !== 'Terminé').length
@@ -983,47 +940,17 @@ function Dashboard({
   return (
     <>
       <RoleSummary user={user} />
-      <WorkflowControlCenter cases={workflowCases} user={user} />
-      {user.role === 'dg' && <DepartmentWorkflowMap cases={workflowCases} onOpenDepartment={onOpenDepartment} />}
-      {user.role === 'dg' && (
-        <StockCommandCenter
-          stocks={stocks}
-          cases={workflowCases}
-          onOpenApproWorkflow={onOpenApproWorkflow}
-          onAction={onAction}
-        />
-      )}
+      <MetricGrid
+        metrics={[
+          { label: 'Trésorerie', value: '1 750 000 TND', trend: 'Disponible', icon: Banknote, color: 'green' },
+          { label: 'FNR', value: '1 890 000 TND', trend: 'À suivre', icon: ReceiptText, color: 'orange' },
+          { label: 'Stock en alerte', value: String(stockAlerts.length), trend: stockAlerts.length > 0 ? 'Appro à traiter' : 'RAS', icon: PackageSearch, color: stockAlerts.length > 0 ? 'orange' : 'green' },
+          { label: user.role === 'dg' ? 'Dossiers actifs' : 'Mes tâches', value: String(pendingForRole), trend: 'Workflow', icon: ClipboardList, color: pendingForRole > 0 ? 'red' : 'green' },
+        ]}
+      />
       <WorkflowSnapshot cases={visibleCases} blockedCases={blockedCases} user={user} onAction={onAction} />
-      <Filters compact filters={filters} onChange={onFiltersChange} onAction={onAction} />
-      <MetricGrid
-        metrics={[
-          { label: "Chiffre d'affaires", value: '2 450 000 TND', trend: '+12.5% vs Avr 2024', icon: ChartColumnBig, color: 'blue' },
-          { label: 'Encaissements', value: '1 320 000 TND', trend: '+8.3% vs Avr 2024', icon: WalletCards, color: 'green' },
-          { label: 'Décaissements', value: '950 000 TND', trend: '-4.7% vs Avr 2024', icon: TrendingDown, color: 'red' },
-          { label: 'Trésorerie disponible', value: '1 750 000 TND', trend: '+15.2% vs Avr 2024', icon: Banknote, color: 'green' },
-          { label: 'FNR', value: '1 890 000 TND', trend: '+5.1% vs Avr 2024', icon: ReceiptText, color: 'orange' },
-        ]}
-      />
-      <div className="grid two-one">
-        <Panel title="Évolution du chiffre d'affaires">
-          <LineChart />
-        </Panel>
-        <Panel title="Répartition CA par société">
-          <Donut />
-        </Panel>
-        <Panel title="Top 5 des FNR par montant">
-          <TopSuppliers onAction={onAction} />
-        </Panel>
-      </div>
-      <MetricGrid
-        metrics={[
-          { label: 'Factures échues (+30 jours)', value: '56', trend: 'Action rapide', icon: FileText, color: 'red' },
-          { label: 'Factures à échéance (7 jours)', value: '34', trend: 'Action rapide', icon: CalendarDays, color: 'orange' },
-          { label: 'Alertes stock', value: String(stockAlerts.length), trend: stockAlerts.length > 0 ? 'Appro notifié auto' : 'Seuils maîtrisés', icon: PackageSearch, color: stockAlerts.length > 0 ? 'orange' : 'green' },
-          { label: user.role === 'dg' ? 'Dossiers actifs' : 'Mes tâches à traiter', value: String(pendingForRole), trend: 'Workflow département', icon: ClipboardList, color: pendingForRole > 0 ? 'red' : 'green' },
-          { label: user.role === 'dg' ? 'Étapes finalisées' : 'Mes travaux validés', value: String(completedByRole), trend: 'Traçabilité workflow', icon: ClipboardCheck, color: 'green' },
-        ]}
-      />
+      {user.role === 'dg' && <DepartmentWorkflowMap cases={workflowCases} onOpenDepartment={onOpenDepartment} />}
+      <WorkflowControlCenter cases={workflowCases} user={user} />
     </>
   )
 }
@@ -3199,41 +3126,6 @@ function LineChart({ variant = 'sales' }: { variant?: 'sales' | 'treasury' }) {
         <circle key={index} cx={index * 46 + 8} cy={112 - point} r="4" />
       ))}
     </svg>
-  )
-}
-
-function Donut() {
-  return (
-    <div className="donut-wrap">
-      <div className="donut" />
-      <div className="legend">
-        <span><i className="dot blue" />TBTrade <strong>60%</strong><small>1 470 000 TND</small></span>
-        <span><i className="dot cyan" />TBRetail <strong>40%</strong><small>980 000 TND</small></span>
-        <b>Total<br />2 450 000 TND</b>
-      </div>
-    </div>
-  )
-}
-
-function TopSuppliers({ onAction }: { onAction: (message: string) => void }) {
-  const suppliers = [
-    ['Fournisseur A', 320000],
-    ['Fournisseur B', 280000],
-    ['Fournisseur C', 210000],
-    ['Fournisseur D', 190000],
-    ['Fournisseur E', 150000],
-  ]
-
-  return (
-    <div className="supplier-list">
-      {suppliers.map(([name, amount]) => (
-        <div key={String(name)}>
-          <span>{name}</span>
-          <strong>{formatNumber(Number(amount))} TND</strong>
-        </div>
-      ))}
-      <button className="link-btn" type="button" onClick={() => onAction('Ouverture de toutes les FNR fournisseurs.')}>Voir tout</button>
-    </div>
   )
 }
 
