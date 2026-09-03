@@ -737,7 +737,7 @@ function App() {
           onNotifications={() => changeScreen('taches')}
         />
         <section className="page" data-accent={current.color}>
-          {active === 'dashboard' && <Dashboard onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} />}
+          {active === 'dashboard' && <Dashboard onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} onOpenScreen={changeScreen} />}
           {active === 'fnr' && <FNR filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
           {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
           {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
@@ -921,12 +921,14 @@ function Dashboard({
   workflowCases,
   stocks,
   onOpenDepartment,
+  onOpenScreen,
 }: {
   onAction: (message: string) => void
   user: UserAccount
   workflowCases: WorkflowCase[]
   stocks: StockRow[]
   onOpenDepartment: (role: Role) => void
+  onOpenScreen: (screen: ScreenKey) => void
 }) {
   const visibleCases = getVisibleCases(workflowCases, user)
   const stockAlerts = stocks.filter(isStockUnderThreshold)
@@ -939,20 +941,235 @@ function Dashboard({
 
   return (
     <>
-      <RoleSummary user={user} />
-      <MetricGrid
-        metrics={[
-          { label: 'Trésorerie', value: '1 750 000 TND', trend: 'Disponible', icon: Banknote, color: 'green' },
-          { label: 'FNR', value: '1 890 000 TND', trend: 'À suivre', icon: ReceiptText, color: 'orange' },
-          { label: 'Stock en alerte', value: String(stockAlerts.length), trend: stockAlerts.length > 0 ? 'Appro à traiter' : 'RAS', icon: PackageSearch, color: stockAlerts.length > 0 ? 'orange' : 'green' },
-          { label: user.role === 'dg' ? 'Dossiers actifs' : 'Mes tâches', value: String(pendingForRole), trend: 'Workflow', icon: ClipboardList, color: pendingForRole > 0 ? 'red' : 'green' },
-        ]}
+      <RoleWorkbench
+        user={user}
+        workflowCases={workflowCases}
+        visibleCases={visibleCases}
+        stockAlerts={stockAlerts}
+        pendingForRole={pendingForRole}
+        blockedCases={blockedCases}
+        onOpenScreen={onOpenScreen}
+        onOpenDepartment={onOpenDepartment}
       />
-      <WorkflowSnapshot cases={visibleCases} blockedCases={blockedCases} user={user} onAction={onAction} />
-      {user.role === 'dg' && <DepartmentWorkflowMap cases={workflowCases} onOpenDepartment={onOpenDepartment} />}
-      <WorkflowControlCenter cases={workflowCases} user={user} />
+      <DashboardEssentials
+        user={user}
+        visibleCases={visibleCases}
+        blockedCases={blockedCases}
+        stockAlerts={stockAlerts}
+        onOpenScreen={onOpenScreen}
+        onAction={onAction}
+      />
     </>
   )
+}
+
+function RoleWorkbench({
+  user,
+  workflowCases,
+  visibleCases,
+  stockAlerts,
+  pendingForRole,
+  blockedCases,
+  onOpenScreen,
+  onOpenDepartment,
+}: {
+  user: UserAccount
+  workflowCases: WorkflowCase[]
+  visibleCases: WorkflowCase[]
+  stockAlerts: StockRow[]
+  pendingForRole: number
+  blockedCases: WorkflowCase[]
+  onOpenScreen: (screen: ScreenKey) => void
+  onOpenDepartment: (role: Role) => void
+}) {
+  const nextCase = [...visibleCases]
+    .filter((item) => item.status !== 'Terminé')
+    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))[0]
+  const shortcuts = getRoleShortcuts(user.role)
+  const activeServices = workflowRoles.map((role) => ({
+    role,
+    total: workflowCases.filter((item) => item.currentRole === role && item.status !== 'Terminé').length,
+    blocked: workflowCases.filter((item) => item.currentRole === role && item.status === 'Bloqué').length,
+  }))
+
+  return (
+    <section className="workbench">
+      <div className="workbench-main">
+        <span className="eyebrow">Espace {roleLabels[user.role]}</span>
+        <h2>{nextCase ? getNextActionLabel(nextCase, user) : 'Tout est calme pour cette session.'}</h2>
+        <p>{roleCapabilities[user.role]}</p>
+        <div className="workbench-actions">
+          <button className="primary-action large" type="button" onClick={() => onOpenScreen('taches')}>
+            <ClipboardCheck size={16} />
+            {nextCase ? 'Ouvrir mes actions' : 'Voir les tâches'}
+          </button>
+          <button className="secondary-action large" type="button" onClick={() => onOpenScreen(roleHome[user.role])}>
+            <Home size={16} />
+            Module principal
+          </button>
+        </div>
+      </div>
+      <div className="workbench-priority">
+        <span className="eyebrow">Priorité</span>
+        {nextCase ? (
+          <>
+            <strong>{nextCase.title}</strong>
+            <small>{nextCase.id} - {roleLabels[nextCase.currentRole]} - {nextCase.due}</small>
+            <div className="priority-meter">
+              <i style={{ width: `${getPriorityScore(nextCase)}%` }} />
+            </div>
+            <Status value={nextCase.status} />
+          </>
+        ) : (
+          <>
+            <strong>Aucune urgence</strong>
+            <small>Les modules restent disponibles dans les raccourcis.</small>
+            <Status value="Flux normal" />
+          </>
+        )}
+      </div>
+      <div className="workbench-kpis">
+        <article>
+          <ClipboardList size={17} />
+          <span>{user.role === 'dg' ? 'Dossiers actifs' : 'Mes actions'}</span>
+          <strong>{pendingForRole}</strong>
+        </article>
+        <article>
+          <ShieldAlert size={17} />
+          <span>Blocages</span>
+          <strong>{blockedCases.length}</strong>
+        </article>
+        <article>
+          <PackageSearch size={17} />
+          <span>Stocks alerte</span>
+          <strong>{stockAlerts.length}</strong>
+        </article>
+      </div>
+      <div className="shortcut-strip">
+        {shortcuts.map((shortcut) => {
+          const Icon = shortcut.icon
+          return (
+            <button key={shortcut.screen} type="button" onClick={() => onOpenScreen(shortcut.screen)}>
+              <Icon size={17} />
+              <span>{shortcut.label}</span>
+              <small>{shortcut.detail}</small>
+            </button>
+          )
+        })}
+      </div>
+      {user.role === 'dg' && (
+        <div className="service-overview">
+          {activeServices.map((item) => (
+            <button key={item.role} className={item.blocked > 0 ? 'blocked' : ''} type="button" onClick={() => onOpenDepartment(item.role)}>
+              <strong>{roleLabels[item.role]}</strong>
+              <span>{item.total} en cours</span>
+              {item.blocked > 0 && <small>{item.blocked} blocage</small>}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function DashboardEssentials({
+  user,
+  visibleCases,
+  blockedCases,
+  stockAlerts,
+  onOpenScreen,
+  onAction,
+}: {
+  user: UserAccount
+  visibleCases: WorkflowCase[]
+  blockedCases: WorkflowCase[]
+  stockAlerts: StockRow[]
+  onOpenScreen: (screen: ScreenKey) => void
+  onAction: (message: string) => void
+}) {
+  const importantCases = [...visibleCases]
+    .filter((item) => item.status !== 'Terminé')
+    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
+    .slice(0, 4)
+
+  return (
+    <div className="dashboard-simple-grid">
+      <Panel title={user.role === 'dg' ? 'Dossiers à surveiller' : 'Mes dossiers'}>
+        <div className="simple-case-list">
+          {importantCases.map((item) => (
+            <button key={item.id} type="button" onClick={() => onOpenScreen('taches')}>
+              <span>
+                <strong>{item.title}</strong>
+                <small>{item.id} - {roleLabels[item.currentRole]} - {getSlaInfo(item).label}</small>
+              </span>
+              <Status value={item.priority} />
+            </button>
+          ))}
+          {importantCases.length === 0 && <p className="muted">Aucun dossier actif à traiter.</p>}
+        </div>
+      </Panel>
+      <Panel title="Alertes simples">
+        <div className="simple-alerts">
+          {blockedCases.slice(0, 2).map((item) => (
+            <article key={item.id}>
+              <ShieldAlert size={16} />
+              <span>
+                <strong>{item.title}</strong>
+                <small>{roleLabels[item.currentRole]} doit répondre.</small>
+              </span>
+            </article>
+          ))}
+          {stockAlerts.slice(0, 2).map((stock) => (
+            <article key={stock.reference}>
+              <PackageSearch size={16} />
+              <span>
+                <strong>{stock.article}</strong>
+                <small>Stock {stock.stockDisponible} / seuil {stock.seuilAlerte}</small>
+              </span>
+            </article>
+          ))}
+          {blockedCases.length === 0 && stockAlerts.length === 0 && <p className="muted">Aucune alerte importante.</p>}
+          <button className="secondary-action" type="button" onClick={() => {
+            onOpenScreen(stockAlerts.length > 0 ? 'stocks' : 'taches')
+            onAction('Ouverture du module lié aux alertes.')
+          }}>
+            Voir les détails
+          </button>
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+function getRoleShortcuts(role: Role): Array<{ screen: ScreenKey; label: string; detail: string; icon: ElementType }> {
+  const shared = { screen: 'taches' as const, label: 'Tâches', detail: 'À faire maintenant', icon: ClipboardList }
+  const shortcuts: Record<Role, Array<{ screen: ScreenKey; label: string; detail: string; icon: ElementType }>> = {
+    dg: [
+      shared,
+      { screen: 'tresorerie', label: 'Trésorerie', detail: 'Solde et prévisions', icon: Banknote },
+      { screen: 'stocks', label: 'Stocks', detail: 'Alertes seuil', icon: Archive },
+      { screen: 'users', label: 'Utilisateurs', detail: 'Accès et rôles', icon: Users },
+    ],
+    finance: [
+      shared,
+      { screen: 'tresorerie', label: 'Trésorerie', detail: 'Disponibilité bancaire', icon: Banknote },
+      { screen: 'decaissements', label: 'Paiements', detail: 'À valider', icon: TrendingDown },
+    ],
+    compta: [
+      shared,
+      { screen: 'fnr', label: 'FNR', detail: 'Factures à contrôler', icon: ReceiptText },
+      { screen: 'decaissements', label: 'Paiements', detail: 'Pièces et suivi', icon: TrendingDown },
+    ],
+    appro: [
+      shared,
+      { screen: 'stocks', label: 'Stocks', detail: 'Ruptures et commandes', icon: Archive },
+    ],
+    commercial: [
+      shared,
+      { screen: 'encaissements', label: 'Encaissements', detail: 'Clients et recouvrement', icon: WalletCards },
+    ],
+  }
+  return shortcuts[role]
 }
 
 function FNR({
@@ -2151,101 +2368,6 @@ function DepartmentLiaisonPanel({
   )
 }
 
-function WorkflowControlCenter({ cases, user }: { cases: WorkflowCase[]; user: UserAccount }) {
-  const scopedCases = getVisibleCases(cases, user)
-  const blocked = scopedCases.filter((item) => item.status === 'Bloqué')
-  const urgent = scopedCases.filter((item) => item.priority === 'Urgent')
-  const pendingReplies = user.role === 'dg'
-    ? cases.filter((item) => item.alerts.some((alert) => alert.to === 'dg' || alert.response))
-    : scopedCases.filter((item) => item.alerts.some((alert) => alert.to === user.role && !alert.response))
-  const completed = scopedCases.filter((item) => item.status === 'Terminé')
-  const departmentLoad = workflowRoles.map((role) => ({
-    role,
-    total: cases.filter((item) => item.currentRole === role && item.status !== 'Terminé').length,
-    blocked: cases.filter((item) => item.currentRole === role && item.status === 'Bloqué').length,
-  }))
-
-  return (
-    <section className="control-center">
-      <div className="control-header">
-        <div>
-          <span className="eyebrow">{user.role === 'dg' ? 'Pilotage DG' : 'Mon poste de travail'}</span>
-          <h2>{user.role === 'dg' ? 'Processus complet par département' : 'Priorités de ma session'}</h2>
-        </div>
-        <Status value={blocked.length > 0 ? `${blocked.length} blocage(s)` : 'Flux normal'} />
-      </div>
-      <div className="control-kpis">
-        <article>
-          <Workflow size={18} />
-          <span>Dossiers visibles</span>
-          <strong>{scopedCases.length}</strong>
-        </article>
-        <article>
-          <Siren size={18} />
-          <span>Urgences</span>
-          <strong>{urgent.length}</strong>
-        </article>
-        <article>
-          <MessageSquareText size={18} />
-          <span>Réponses / notifs</span>
-          <strong>{pendingReplies.length}</strong>
-        </article>
-        <article>
-          <CheckCircle2 size={18} />
-          <span>Terminés</span>
-          <strong>{completed.length}</strong>
-        </article>
-      </div>
-      {user.role === 'dg' && (
-        <div className="department-load">
-          {departmentLoad.map((item) => (
-            <span key={item.role}>
-              <strong>{roleLabels[item.role]}</strong>
-              {item.total} en cours
-              {item.blocked > 0 && <b>{item.blocked} bloqué</b>}
-            </span>
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
-
-function DepartmentWorkflowMap({ cases, onOpenDepartment }: { cases: WorkflowCase[]; onOpenDepartment: (role: Role) => void }) {
-  return (
-    <section className="department-map">
-      <div className="map-header">
-        <div>
-          <span className="eyebrow">Workflow DG</span>
-          <h2>Finance → Comptabilité → Commercial → Approvisionnement</h2>
-        </div>
-        <Status value="Supervision active" />
-      </div>
-      <div className="map-lanes">
-        {workflowRoles.map((role, index) => {
-          const activeCases = cases.filter((item) => item.currentRole === role && item.status !== 'Terminé')
-          const blockedCases = activeCases.filter((item) => item.status === 'Bloqué')
-          const lastCase = activeCases[0]
-          return (
-            <article className={blockedCases.length > 0 ? 'blocked' : ''} key={role}>
-              <div className="lane-index">{index + 1}</div>
-              <strong>{roleLabels[role]}</strong>
-              <span>{activeCases.length} dossier(s) en charge</span>
-              <small>{lastCase ? `${lastCase.id} - ${lastCase.title}` : 'Aucun dossier en attente'}</small>
-              <div className="lane-bar">
-                <i style={{ width: `${Math.min(100, activeCases.length * 35 + blockedCases.length * 20)}%` }} />
-              </div>
-              <button className="secondary-action" type="button" onClick={() => onOpenDepartment(role)}>
-                Voir service
-              </button>
-            </article>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
 function NotificationCenter({
   items,
   user,
@@ -2285,52 +2407,6 @@ function NotificationCenter({
         ))}
       </div>
     </Panel>
-  )
-}
-
-function WorkflowSnapshot({
-  cases,
-  blockedCases,
-  user,
-  onAction,
-}: {
-  cases: WorkflowCase[]
-  blockedCases: WorkflowCase[]
-  user: UserAccount
-  onAction: (message: string) => void
-}) {
-  const activeLabel = user.role === 'dg' ? 'Dossiers supervisés' : 'Mes dossiers actifs'
-  return (
-    <div className="grid half">
-      <Panel title={activeLabel}>
-        <div className="workflow-mini-list">
-          {cases.slice(0, 3).map((item) => (
-            <button key={item.id} type="button" onClick={() => onAction(`Ouverture workflow ${item.id}.`)}>
-              <Workflow size={16} />
-              <span>
-                <strong>{item.title}</strong>
-                <small>{item.id} - étape: {roleLabels[item.currentRole]}</small>
-              </span>
-              <Status value={item.status} />
-            </button>
-          ))}
-        </div>
-      </Panel>
-      <Panel title={user.role === 'dg' ? 'Blocages à décider' : 'Notifications DG'}>
-        <div className="notification-list">
-          {blockedCases.length === 0 && <p className="muted">Aucun blocage critique pour cette session.</p>}
-          {blockedCases.map((item) => (
-            <article key={item.id}>
-              <ShieldAlert size={16} />
-              <span>
-                <strong>{item.title}</strong>
-                <small>{user.role === 'dg' ? `${roleLabels[item.currentRole]} bloque le dossier.` : 'La DG attend votre retour.'}</small>
-              </span>
-            </article>
-          ))}
-        </div>
-      </Panel>
-    </div>
   )
 }
 
@@ -2846,19 +2922,6 @@ function Profile({
         </div>
       </Panel>
     </div>
-  )
-}
-
-function RoleSummary({ user }: { user: UserAccount }) {
-  return (
-    <section className="role-summary">
-      <div>
-        <span className="eyebrow">Session active</span>
-        <h2>{roleLabels[user.role]}</h2>
-        <p>{roleCapabilities[user.role]}</p>
-      </div>
-      <Status value="Actif" />
-    </section>
   )
 }
 
