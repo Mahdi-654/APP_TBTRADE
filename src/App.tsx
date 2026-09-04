@@ -22,7 +22,6 @@ import {
   KeyRound,
   LockKeyhole,
   LogOut,
-  Mail,
   MessageSquareText,
   MoreVertical,
   PackageSearch,
@@ -103,7 +102,7 @@ type WorkflowCase = {
   due: string
   currentRole: Role
   owner: string
-  status: 'Bloqué' | 'En cours' | 'Terminé'
+  status: 'Bloqué' | 'En cours' | 'Retour DG' | 'Terminé'
   steps: WorkflowStep[]
   alerts: WorkflowAlert[]
 }
@@ -131,6 +130,14 @@ type DgObservation = {
   status: 'Non lue' | 'Lue' | 'Traitée'
 }
 
+type PaymentSchedule = {
+  id: number
+  mode: 'Espèces' | 'Chèque' | 'Traite' | 'Virement'
+  amount: number
+  dueDate: string
+  status: 'En attente' | 'Déposé' | 'Payé' | 'À renégocier'
+}
+
 type CollectionCase = {
   id: string
   client: string
@@ -142,8 +149,35 @@ type CollectionCase = {
   currentDueDate: string
   nextPromiseDate: string
   clientComment: string
+  paymentPlan: PaymentSchedule[]
   status: CollectionStatus
   observations: DgObservation[]
+}
+
+type SupplierCommitment = {
+  id: string
+  supplier: string
+  department: 'Finance' | 'Appro'
+  lastOrder: string
+  invoice: string
+  amount: number
+  paidAmount: number
+  paymentProof: string
+  nextPaymentDate: string
+  mode: 'Chèque' | 'Traite' | 'Virement'
+  status: 'Payé' | 'Partiel' | 'En attente DG'
+  approDecision: 'Commande autorisée' | 'Commande bloquée'
+  financePlan: string
+}
+
+type CommercialRoute = {
+  commercial: string
+  vehicle: string
+  zone: string
+  clients: string[]
+  expectedRecovery: number
+  todayRecovery: number
+  nextDueDate: string
 }
 
 type FilterState = {
@@ -168,6 +202,12 @@ const initialFilters: FilterState = {
 
 const formatNumber = (value: number) =>
   new Intl.NumberFormat('fr-FR').format(value)
+
+const toDateInputValue = (value: string) => {
+  const [day, month, year] = value.split('/')
+  if (!day || !month || !year) return value
+  return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+}
 
 const roleLabels: Record<Role, string> = {
   dg: 'Direction Générale',
@@ -272,14 +312,6 @@ const initialUsers: UserAccount[] = [
   },
 ]
 
-const demoCredentials = [
-  ['dg@tbtrade.local', 'DG - accès global'],
-  ['finance@tbtrade.local', 'Finance - règlements et contrôle'],
-  ['compta@tbtrade.local', 'Compta - FNR et règlements'],
-  ['appro@tbtrade.local', 'Appro - stocks et tâches'],
-  ['commercial@tbtrade.local', 'Commercial - clients et recouvrement'],
-]
-
 const workflowRoles: Role[] = ['finance', 'compta', 'commercial', 'appro']
 
 const roleCapabilities: Record<Role, string> = {
@@ -366,15 +398,15 @@ const initialWorkflowCases: WorkflowCase[] = [
 ]
 
 const fnrRows = [
-  ['FAC-2024-1258', 'Fournisseur A', 'TBTrade', '15/04/2024', '15/05/2024', '120 000', '16', 'En retard'],
-  ['FAC-2024-1187', 'Fournisseur B', 'TBRetail', '10/04/2024', '10/05/2024', '80 000', '21', 'En retard'],
-  ['FAC-2024-1122', 'Fournisseur C', 'TBTrade', '05/04/2024', '05/05/2024', '210 000', '26', 'En retard'],
-  ['FAC-2024-1045', 'Fournisseur D', 'TBRetail', '25/04/2024', '25/05/2024', '60 000', '6', 'À échéance'],
-  ['FAC-2024-1033', 'Fournisseur E', 'TBTrade', '28/04/2024', '28/05/2024', '95 000', '3', 'À échéance'],
-  ['FAC-2024-0987', 'Fournisseur F', 'TBRetail', '20/04/2024', '20/05/2024', '45 000', '11', 'En retard'],
-  ['FAC-2024-0976', 'Fournisseur G', 'TBTrade', '01/05/2024', '01/06/2024', '70 000', '-', 'À venir'],
-  ['FAC-2024-0932', 'Fournisseur H', 'TBRetail', '02/05/2024', '02/06/2024', '65 000', '-1', 'À venir'],
-].map(([numero, fournisseur, societe, date, echeance, montant, retard, statut]) => ({
+  ['FAC-2024-1258', 'Fournisseur A', 'TBTrade', '15/04/2024', '15/05/2024', '120 000', '16', 'En retard', 'Nadia Saidi', 'Traite', '15/05/2024'],
+  ['FAC-2024-1187', 'Fournisseur B', 'TBRetail', '10/04/2024', '10/05/2024', '80 000', '21', 'En retard', 'Nadia Saidi', 'Chèque', '10/05/2024'],
+  ['FAC-2024-1122', 'Fournisseur C', 'TBTrade', '05/04/2024', '05/05/2024', '210 000', '26', 'En retard', 'Sami Ben Ali', 'Traite', '05/05/2024'],
+  ['FAC-2024-1045', 'Fournisseur D', 'TBRetail', '25/04/2024', '25/05/2024', '60 000', '6', 'À échéance', 'Nadia Saidi', 'Chèque', '25/05/2024'],
+  ['FAC-2024-1033', 'Fournisseur E', 'TBTrade', '28/04/2024', '28/05/2024', '95 000', '3', 'À échéance', 'Meriem Trabelsi', 'Virement', '28/05/2024'],
+  ['FAC-2024-0987', 'Fournisseur F', 'TBRetail', '20/04/2024', '20/05/2024', '45 000', '11', 'En retard', 'Nadia Saidi', 'Traite', '20/05/2024'],
+  ['FAC-2024-0976', 'Fournisseur G', 'TBTrade', '01/05/2024', '01/06/2024', '70 000', '-', 'À venir', 'Nadia Saidi', 'Chèque', '01/06/2024'],
+  ['FAC-2024-0932', 'Fournisseur H', 'TBRetail', '02/05/2024', '02/06/2024', '65 000', '-1', 'À venir', 'Sami Ben Ali', 'Virement', '02/06/2024'],
+].map(([numero, fournisseur, societe, date, echeance, montant, retard, statut, commercial, modeEcheance, datePaiement]) => ({
   numero,
   fournisseur,
   societe,
@@ -383,6 +415,9 @@ const fnrRows = [
   montant,
   retard,
   statut,
+  commercial,
+  modeEcheance,
+  datePaiement,
 }))
 
 const encaissements = [
@@ -412,12 +447,18 @@ const initialCollectionCases: CollectionCase[] = [
     recoveredAmount: 1000,
     currentDueDate: '25/05/2024',
     nextPromiseDate: '25/08/2024',
-    clientComment: 'Le client demande de régler le reste dans 3 mois.',
+    clientComment: 'Le client a payé 1 000 TND en espèces et demande de régler le reste sur trois échéances.',
+    paymentPlan: [
+      { id: 1, mode: 'Espèces', amount: 1000, dueDate: '22/05/2024', status: 'Payé' },
+      { id: 2, mode: 'Chèque', amount: 1500, dueDate: '25/06/2024', status: 'En attente' },
+      { id: 3, mode: 'Traite', amount: 1500, dueDate: '25/07/2024', status: 'En attente' },
+      { id: 4, mode: 'Traite', amount: 1000, dueDate: '25/08/2024', status: 'À renégocier' },
+    ],
     status: 'Promesse client',
     observations: [
       {
         id: 1,
-        message: 'Accélérer le recouvrement client, ne pas attendre 3 mois si possible.',
+        message: 'Négocier avec le client pour réduire à deux échéances au lieu de trois.',
         urgency: 'Urgent',
         requestedDate: '30/05/2024',
         status: 'Non lue',
@@ -435,6 +476,9 @@ const initialCollectionCases: CollectionCase[] = [
     currentDueDate: '24/05/2024',
     nextPromiseDate: '',
     clientComment: 'Échéance actuelle recouvrée.',
+    paymentPlan: [
+      { id: 1, mode: 'Virement', amount: 40000, dueDate: '24/05/2024', status: 'Payé' },
+    ],
     status: 'Recouvré',
     observations: [],
   },
@@ -449,6 +493,10 @@ const initialCollectionCases: CollectionCase[] = [
     currentDueDate: '27/05/2024',
     nextPromiseDate: '03/06/2024',
     clientComment: 'Client à relancer après confirmation comptabilité.',
+    paymentPlan: [
+      { id: 1, mode: 'Chèque', amount: 8000, dueDate: '03/06/2024', status: 'En attente' },
+      { id: 2, mode: 'Chèque', amount: 8000, dueDate: '17/06/2024', status: 'En attente' },
+    ],
     status: 'À accélérer',
     observations: [
       {
@@ -459,6 +507,75 @@ const initialCollectionCases: CollectionCase[] = [
         status: 'Lue',
       },
     ],
+  },
+]
+
+const supplierCommitments: SupplierCommitment[] = [
+  {
+    id: 'FRS-A-2405',
+    supplier: 'Fournisseur A',
+    department: 'Finance',
+    lastOrder: 'CMD-2024-077',
+    invoice: 'FAC-2024-1258',
+    amount: 120000,
+    paidAmount: 120000,
+    paymentProof: 'Preuve virement PAY-2024-045',
+    nextPaymentDate: '15/05/2024',
+    mode: 'Virement',
+    status: 'Payé',
+    approDecision: 'Commande autorisée',
+    financePlan: 'Dernière relation soldée. Appro peut passer la commande.',
+  },
+  {
+    id: 'FRS-E-2405',
+    supplier: 'Fournisseur E',
+    department: 'Finance',
+    lastOrder: 'CMD-2024-081',
+    invoice: 'FAC-2024-1033',
+    amount: 95000,
+    paidAmount: 45000,
+    paymentProof: 'Facture reçue, preuve partielle PAY-2024-041',
+    nextPaymentDate: '28/05/2024',
+    mode: 'Traite',
+    status: 'Partiel',
+    approDecision: 'Commande bloquée',
+    financePlan: 'Découper le solde sur 2 échéances selon recouvrement commercial du jour.',
+  },
+  {
+    id: 'FRS-H-2405',
+    supplier: 'Fournisseur H',
+    department: 'Appro',
+    lastOrder: 'CMD-2024-090',
+    invoice: 'FAC-2024-0932',
+    amount: 65000,
+    paidAmount: 0,
+    paymentProof: 'Aucune preuve validée',
+    nextPaymentDate: '02/06/2024',
+    mode: 'Chèque',
+    status: 'En attente DG',
+    approDecision: 'Commande bloquée',
+    financePlan: 'Attendre ordre DG avant engagement bancaire.',
+  },
+]
+
+const commercialRoutes: CommercialRoute[] = [
+  {
+    commercial: 'Nadia Saidi',
+    vehicle: 'BT-2145',
+    zone: 'Tunis Nord',
+    clients: ['Client A', 'Client B', 'Client D'],
+    expectedRecovery: 61000,
+    todayRecovery: 2500,
+    nextDueDate: '25/05/2024',
+  },
+  {
+    commercial: 'Walid Mansour',
+    vehicle: 'BT-2280',
+    zone: 'Cap Bon',
+    clients: ['Client C', 'Client E'],
+    expectedRecovery: 42000,
+    todayRecovery: 0,
+    nextDueDate: '27/05/2024',
   },
 ]
 
@@ -767,14 +884,9 @@ function LoginPage({ accounts, onLogin, message }: { accounts: UserAccount[]; on
               Se connecter
             </button>
           </form>
-          <div className="demo-users">
-            {demoCredentials.map(([login, role]) => (
-              <button className={email === login ? 'selected' : undefined} key={login} type="button" onClick={() => setEmail(login)}>
-                <Mail size={14} />
-                <span>{login}</span>
-                <small>{role}</small>
-              </button>
-            ))}
+          <div className="login-access-note">
+            <ShieldAlert size={15} />
+            <span>Accès réservé aux équipes TBTrade. Les connexions de test sont communiquées hors écran.</span>
           </div>
           <small className="session-message">{message}</small>
         </div>
@@ -1137,6 +1249,68 @@ function getRoleShortcuts(role: Role): Array<{ screen: ScreenKey; label: string;
   return shortcuts[role]
 }
 
+function ModuleHeader({ eyebrow, title, description }: { eyebrow: string; title: string; description: string }) {
+  return (
+    <section className="module-header">
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+      <span className="module-header-icon">
+        <ChartColumnBig size={22} />
+      </span>
+    </section>
+  )
+}
+
+function FnrCommercialDashboard({ rows }: { rows: Array<Record<string, ReactNode>> }) {
+  const totalsByCommercial = rows.reduce<Record<string, { total: number; count: number; late: number }>>((acc, row) => {
+    const commercial = String(row.commercial)
+    const amount = Number(String(row.montant).replace(/[^\d]/g, '')) || 0
+    acc[commercial] = acc[commercial] ?? { total: 0, count: 0, late: 0 }
+    acc[commercial].total += amount
+    acc[commercial].count += 1
+    if (row.statut === 'En retard') acc[commercial].late += 1
+    return acc
+  }, {})
+  const commercialCards = Object.entries(totalsByCommercial)
+  const timeline = [...rows]
+    .sort((a, b) => Number(String(b.retard).replace(/[^\d-]/g, '')) - Number(String(a.retard).replace(/[^\d-]/g, '')))
+    .slice(0, 5)
+
+  return (
+    <div className="fnr-dashboard">
+      <section className="fnr-commercials">
+        {commercialCards.map(([commercial, data]) => (
+          <article key={commercial}>
+            <span>{commercial}</span>
+            <strong>{formatNumber(data.total)} TND</strong>
+            <small>{data.count} FNR suivie(s), {data.late} en retard</small>
+            <i style={{ width: `${Math.min(100, data.late * 28 + data.count * 8)}%` }} />
+          </article>
+        ))}
+      </section>
+      <section className="date-rail">
+        <div>
+          <span className="eyebrow">Dates importantes</span>
+          <strong>Chèques, traites et échéances</strong>
+        </div>
+        {timeline.map((row) => (
+          <article className={row.statut === 'En retard' ? 'late' : ''} key={String(row.numero)}>
+            <CalendarDays size={15} />
+            <span>
+              <b>{String(row.datePaiement)}</b>
+              {String(row.numero)} - {String(row.modeEcheance)} - {String(row.commercial)}
+            </span>
+            <Status value={row.statut} />
+          </article>
+        ))}
+      </section>
+    </div>
+  )
+}
+
 function FNR({
   filters,
   onFiltersChange,
@@ -1150,6 +1324,12 @@ function FNR({
 
   return (
     <>
+      <ModuleHeader
+        eyebrow="Pilotage FNR"
+        title="Factures, échéances et responsabilités commerciales"
+        description="Vue interne pour voir qui suit chaque facture, quelles échéances arrivent, et quels paiements sont prévus par chèque, traite ou virement."
+      />
+      <FnrCommercialDashboard rows={rows} />
       <Filters search filters={filters} onChange={onFiltersChange} onAction={onAction} />
       <ModuleQuickActions
         actions={[
@@ -1165,8 +1345,10 @@ function FNR({
           { key: 'numero', label: 'N° Facture', render: (row) => <button className="link-btn" type="button" onClick={() => onAction(`Ouverture ${row.numero}`)}>{row.numero}</button> },
           { key: 'fournisseur', label: 'Fournisseur' },
           { key: 'societe', label: 'Société' },
+          { key: 'commercial', label: 'Commercial' },
           { key: 'date', label: 'Date facture' },
           { key: 'echeance', label: 'Échéance' },
+          { key: 'modeEcheance', label: 'Mode prévu', render: (row) => <Status value={row.modeEcheance} /> },
           { key: 'montant', label: 'Montant (TND)' },
           { key: 'retard', label: 'Retard (jours)' },
           { key: 'statut', label: 'Statut', render: (row) => <Status value={row.statut} /> },
@@ -1202,8 +1384,13 @@ function Cashflow({
         recoveredAmount: String(item.recoveredAmount),
         nextPromiseDate: item.nextPromiseDate,
         clientComment: item.clientComment,
-        observation: 'Accélérer le recouvrement client.',
-        requestedDate: item.currentDueDate,
+        paymentAction: 'Reste à encaisser selon les échéances client.',
+        scheduleText: item.paymentPlan
+          .filter((payment) => payment.status !== 'Payé')
+          .map((payment) => `${payment.mode}; ${payment.amount}; ${payment.dueDate}`)
+          .join('\n'),
+        observation: 'Négocier moins d’échéances et confirmer une date ferme.',
+        requestedDate: toDateInputValue(item.currentDueDate),
         urgency: 'Urgent' as DgObservation['urgency'],
       },
     ])),
@@ -1240,16 +1427,20 @@ function Cashflow({
     const target = collectionCases.find((item) => item.id === id)
     if (!target) return
     const remaining = Math.max(0, target.assignedAmount - amount)
-    if (remaining > 0 && (!draft.nextPromiseDate.trim() || !draft.clientComment.trim())) {
-      onAction('Recouvrement partiel: le commercial doit préciser la date promise et le commentaire client.')
+    if (remaining > 0 && (!draft.scheduleText.trim() || !draft.clientComment.trim() || !draft.paymentAction.trim())) {
+      onAction('Recouvrement partiel: le commercial doit préciser les échéances restantes, l’action prévue et le commentaire client.')
       return
     }
+    const plannedPayments = parsePaymentSchedule(draft.scheduleText, amount)
     setCollectionCases(collectionCases.map((item) => item.id === id
       ? {
           ...item,
           recoveredAmount: Math.min(amount, item.assignedAmount),
           nextPromiseDate: remaining > 0 ? draft.nextPromiseDate : '',
-          clientComment: draft.clientComment,
+          clientComment: remaining > 0 ? `${draft.clientComment} Action commercial: ${draft.paymentAction}` : draft.clientComment,
+          paymentPlan: remaining === 0
+            ? [{ id: Date.now(), mode: 'Espèces', amount: Math.min(amount, item.assignedAmount), dueDate: 'Aujourd’hui', status: 'Payé' as const }]
+            : plannedPayments,
           status: remaining === 0 ? 'Recouvré' : 'Promesse client',
           observations: item.observations.map((observation) => observation.status === 'Non lue' ? { ...observation, status: 'Lue' as const } : observation),
         }
@@ -1287,6 +1478,11 @@ function Cashflow({
 
   return (
     <>
+      <ModuleHeader
+        eyebrow={isIncome ? 'Module commercial' : 'Module paiements'}
+        title={isIncome ? 'Encaissements, recouvrement et négociation client' : 'Décaissements, fournisseurs et échéances'}
+        description={isIncome ? 'Le commercial déclare les paiements reçus, précise le reste à encaisser et la DG peut intervenir sur les conditions client.' : 'Suivi des paiements fournisseur avec visibilité finance, comptabilité et DG.'}
+      />
       <Filters search filters={filters} onChange={onFiltersChange} onAction={onAction} />
       <ModuleQuickActions
         actions={isIncome
@@ -1320,15 +1516,21 @@ function Cashflow({
         }
       />
       {isIncome && (
-        <CommercialRecovery
-          cases={filteredCollectionCases}
-          totals={collectionTotals}
-          drafts={collectionDrafts}
-          user={user}
-          onDraftChange={updateDraft}
-          onSaveRecovery={saveRecovery}
-          onSendObservation={sendDgObservation}
-        />
+        <>
+          <CommercialRoutePlanner routes={commercialRoutes} onAction={onAction} />
+          <CommercialRecovery
+            cases={filteredCollectionCases}
+            totals={collectionTotals}
+            drafts={collectionDrafts}
+            user={user}
+            onDraftChange={updateDraft}
+            onSaveRecovery={saveRecovery}
+            onSendObservation={sendDgObservation}
+          />
+        </>
+      )}
+      {!isIncome && (
+        <FinanceCommitments commitments={supplierCommitments} onAction={onAction} />
       )}
       <DataTable
         emptyLabel="Aucune opération ne correspond aux filtres."
@@ -1359,6 +1561,112 @@ function Cashflow({
   )
 }
 
+function FinanceCommitments({
+  commitments,
+  onAction,
+}: {
+  commitments: SupplierCommitment[]
+  onAction: (message: string) => void
+}) {
+  const total = commitments.reduce((sum, item) => sum + item.amount, 0)
+  const paid = commitments.reduce((sum, item) => sum + item.paidAmount, 0)
+  const blocked = commitments.filter((item) => item.approDecision === 'Commande bloquée')
+
+  return (
+    <section className="process-board">
+      <div className="process-head">
+        <div>
+          <span className="eyebrow">Finance fournisseur</span>
+          <h2>Paiements, preuves et autorisation Appro</h2>
+          <p>Chaque engagement fournisseur doit avoir une facture et une preuve de paiement avant nouvelle commande.</p>
+        </div>
+        <div className="process-mini-kpis">
+          <article><span>Engagé</span><strong>{formatNumber(total)} TND</strong></article>
+          <article><span>Payé</span><strong>{formatNumber(paid)} TND</strong></article>
+          <article><span>Bloqué Appro</span><strong>{blocked.length}</strong></article>
+        </div>
+      </div>
+      <div className="commitment-grid">
+        {commitments.map((item) => {
+          const remaining = Math.max(0, item.amount - item.paidAmount)
+          return (
+            <article className={item.approDecision === 'Commande bloquée' ? 'blocked' : 'cleared'} key={item.id}>
+              <header>
+                <span className="eyebrow">{item.id} - {item.lastOrder}</span>
+                <Status value={item.approDecision} />
+              </header>
+              <h3>{item.supplier}</h3>
+              <div className="commitment-line">
+                <span><b>{formatNumber(item.amount)} TND</b>Facture</span>
+                <span><b>{formatNumber(item.paidAmount)} TND</b>Payé</span>
+                <span><b>{formatNumber(remaining)} TND</b>Reste</span>
+              </div>
+              <p><strong>{item.invoice}</strong> - {item.paymentProof}</p>
+              <small>{item.mode} prévu le {item.nextPaymentDate}. {item.financePlan}</small>
+              <div className="workflow-actions">
+                <button className="secondary-action" type="button" onClick={() => onAction(`Preuve envoyée à Appro pour ${item.supplier}: ${item.paymentProof}.`)}>
+                  <Send size={15} />
+                  Envoyer preuve Appro
+                </button>
+                <button className="secondary-action" type="button" onClick={() => onAction(`Dossier ${item.supplier} transmis à Comptabilité pour rapprochement facture/paiement.`)}>
+                  <FileText size={15} />
+                  Rapprocher compta
+                </button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function CommercialRoutePlanner({
+  routes,
+  onAction,
+}: {
+  routes: CommercialRoute[]
+  onAction: (message: string) => void
+}) {
+  return (
+    <section className="process-board">
+      <div className="process-head">
+        <div>
+          <span className="eyebrow">Circuit commercial</span>
+          <h2>Tournées clients, véhicules et recouvrements du jour</h2>
+          <p>Chaque commercial suit les clients de son circuit et déclare les encaissements ou échéances négociées.</p>
+        </div>
+      </div>
+      <div className="route-grid">
+        {routes.map((route) => (
+          <article key={route.vehicle}>
+            <header>
+              <span>
+                <strong>{route.commercial}</strong>
+                <small>{route.zone} - véhicule {route.vehicle}</small>
+              </span>
+              <Status value={route.nextDueDate} />
+            </header>
+            <div className="route-map">
+              {route.clients.map((client, index) => (
+                <span key={client}>{index + 1}. {client}</span>
+              ))}
+            </div>
+            <div className="commitment-line">
+              <span><b>{formatNumber(route.expectedRecovery)} TND</b>À recouvrer</span>
+              <span><b>{formatNumber(route.todayRecovery)} TND</b>Aujourd’hui</span>
+            </div>
+            <button className="secondary-action" type="button" onClick={() => onAction(`Circuit ${route.vehicle} ouvert pour ${route.commercial}.`)}>
+              <CalendarDays size={15} />
+              Planifier tournée
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function CommercialRecovery({
   cases,
   totals,
@@ -1374,6 +1682,8 @@ function CommercialRecovery({
     recoveredAmount: string
     nextPromiseDate: string
     clientComment: string
+    paymentAction: string
+    scheduleText: string
     observation: string
     requestedDate: string
     urgency: DgObservation['urgency']
@@ -1383,6 +1693,8 @@ function CommercialRecovery({
     recoveredAmount: string
     nextPromiseDate: string
     clientComment: string
+    paymentAction: string
+    scheduleText: string
     observation: string
     requestedDate: string
     urgency: DgObservation['urgency']
@@ -1450,10 +1762,11 @@ function CommercialRecovery({
               <div className="promise-strip">
                 <CalendarDays size={15} />
                 <span>
-                  <strong>{remainingAssigned > 0 ? `Promesse client: ${item.nextPromiseDate || 'à préciser'}` : 'Échéance recouvrée'}</strong>
+                  <strong>{remainingAssigned > 0 ? `Prochaine échéance: ${item.nextPromiseDate || 'à préciser'}` : 'Échéance recouvrée'}</strong>
                   Reste total client: {formatNumber(remainingTotal)} TND
                 </span>
               </div>
+              <PaymentPlanRail payments={item.paymentPlan} />
               <p className="muted">{item.clientComment}</p>
               {latestObservation && (
                 <div className="dg-observation">
@@ -1475,12 +1788,20 @@ function CommercialRecovery({
                     <input value={draft.recoveredAmount} onChange={(event) => onDraftChange(item.id, { recoveredAmount: event.target.value })} />
                   </label>
                   <label>
-                    Prochaine promesse
+                    Prochaine date
                     <input value={draft.nextPromiseDate} onChange={(event) => onDraftChange(item.id, { nextPromiseDate: event.target.value })} />
                   </label>
                   <label>
+                    Action sur le reste
+                    <input value={draft.paymentAction} onChange={(event) => onDraftChange(item.id, { paymentAction: event.target.value })} />
+                  </label>
+                  <label>
+                    Échéances restantes
+                    <textarea value={draft.scheduleText} onChange={(event) => onDraftChange(item.id, { scheduleText: event.target.value })} />
+                  </label>
+                  <label>
                     Commentaire client
-                    <input value={draft.clientComment} onChange={(event) => onDraftChange(item.id, { clientComment: event.target.value })} />
+                    <textarea value={draft.clientComment} onChange={(event) => onDraftChange(item.id, { clientComment: event.target.value })} />
                   </label>
                   <button className="primary-action" type="submit">
                     <ClipboardCheck size={15} />
@@ -1504,7 +1825,7 @@ function CommercialRecovery({
                   </label>
                   <label>
                     Date souhaitée
-                    <input value={draft.requestedDate} onChange={(event) => onDraftChange(item.id, { requestedDate: event.target.value })} />
+                    <input type="date" value={draft.requestedDate} onChange={(event) => onDraftChange(item.id, { requestedDate: event.target.value })} />
                   </label>
                   <button className="secondary-action" type="button" onClick={() => onSendObservation(item.id)}>
                     <Send size={15} />
@@ -1520,9 +1841,28 @@ function CommercialRecovery({
   )
 }
 
+function PaymentPlanRail({ payments }: { payments: PaymentSchedule[] }) {
+  return (
+    <div className="payment-plan-rail">
+      {payments.map((payment) => (
+        <article className={payment.status === 'Payé' ? 'paid' : payment.status === 'À renégocier' ? 'warning' : ''} key={payment.id}>
+          <span>{payment.dueDate}</span>
+          <strong>{formatNumber(payment.amount)} TND</strong>
+          <small>{payment.mode} - {payment.status}</small>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function Tresorerie({ onAction }: { onAction: (message: string) => void }) {
   return (
     <>
+      <ModuleHeader
+        eyebrow="Module stock"
+        title="Stocks critiques et passation de commande"
+        description="Les ruptures créent des dossiers Appro. La DG garde la décision de transfert vers les autres départements."
+      />
       <MetricGrid
         metrics={[
           { label: 'Solde bancaire actuel', value: '1 750 000 TND', trend: '', icon: Banknote, color: 'blue' },
@@ -1913,13 +2253,12 @@ function Taches({
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId || item.currentRole !== user.role) return item
       const currentIndex = item.steps.findIndex((step) => step.role === item.currentRole)
-      const nextStep = item.steps[currentIndex + 1]
-      const nextOwner = nextStep ? getPrimaryUserForRole(nextStep.role, accounts).name : item.owner
+      const dgOwner = getPrimaryUserForRole('dg', accounts).name
       return {
         ...item,
-        currentRole: nextStep?.role ?? item.currentRole,
-        owner: nextOwner,
-        status: nextStep ? 'En cours' as const : 'Terminé' as const,
+        currentRole: 'dg' as const,
+        owner: dgOwner,
+        status: 'Retour DG' as const,
         alerts: [
           ...item.alerts,
           {
@@ -1927,27 +2266,18 @@ function Taches({
             from: user.role,
             to: 'dg' as const,
             sentAt: 'Maintenant',
-            message: `${user.service} a terminé son intervention sur ${item.id}.`,
+            message: `${user.service} a clôturé son travail sur ${item.id}. Décision DG requise: transférer à un autre département ou clôturer le dossier.`,
             kind: 'reply' as const,
           },
-          ...(nextStep ? [{
-            id: Date.now() + 1,
-            from: user.role,
-            to: nextStep.role,
-            sentAt: 'Maintenant',
-            message: `Le dossier ${item.id} passe maintenant à ${roleLabels[nextStep.role]}.`,
-            kind: 'department-message' as const,
-          }] : []),
         ],
         steps: item.steps.map((step, index) => {
-          if (index === currentIndex) return { ...step, status: 'done' as const, note: `Validé par ${user.service}` }
-          if (index === currentIndex + 1) return { ...step, status: 'active' as const, note: `À traiter par ${roleLabels[step.role]}` }
+          if (index === currentIndex) return { ...step, status: 'done' as const, note: `Traité par ${user.service}, en attente validation DG` }
           return step
         }),
       }
     })
     setWorkflowCases(updated)
-    onAction(`Étape validée pour ${caseId}. Le dossier avance dans le workflow.`)
+    onAction(`Dossier ${caseId} traité par ${user.service}. Il retourne à la DG pour décision.`)
   }
 
   const transferCase = (caseId: string, nextRole: Role) => {
@@ -1963,7 +2293,7 @@ function Taches({
           role,
           label: roleLabels[role],
           status: role === nextRole ? 'active' as const : item.steps.some((step) => step.role === role && step.status === 'done') ? 'done' as const : 'waiting' as const,
-          note: role === nextRole ? `Dossier transféré à ${roleLabels[role]}` : `Disponible si la DG le transfère à ${roleLabels[role]}`,
+          note: role === nextRole ? `Dossier transféré par la DG à ${roleLabels[role]}` : item.steps.find((step) => step.role === role)?.note ?? `Disponible si la DG le transfère à ${roleLabels[role]}`,
         })),
         alerts: [
           ...item.alerts,
@@ -1985,8 +2315,39 @@ function Taches({
     onAction(`Dossier ${caseId} transféré vers ${roleLabels[nextRole]}.`)
   }
 
+  const closeCaseByDg = (caseId: string) => {
+    const updated = workflowCases.map((item) => {
+      if (item.id !== caseId) return item
+      return {
+        ...item,
+        currentRole: 'dg' as const,
+        owner: getPrimaryUserForRole('dg', accounts).name,
+        status: 'Terminé' as const,
+        alerts: [
+          ...item.alerts,
+          {
+            id: Date.now(),
+            from: 'dg' as const,
+            to: 'dg' as const,
+            sentAt: 'Maintenant',
+            message: `Dossier clôturé par la Direction Générale. Il reste disponible dans l’historique uniquement.`,
+            kind: 'dg-observation' as const,
+          },
+        ],
+      }
+    })
+    setWorkflowCases(updated)
+    setOpenedCaseId(null)
+    onAction(`Dossier ${caseId} clôturé par la DG et déplacé dans l’historique.`)
+  }
+
   return (
     <>
+      <ModuleHeader
+        eyebrow="Module dossiers"
+        title="Boîtes par département et décision DG"
+        description="Chaque service traite puis renvoie à la DG. La DG transfère, rouvre ou clôture le dossier."
+      />
       <SimpleTaskHeader cases={workflowCases} user={user} notifications={inboxItems.length} />
       {user.role === 'dg' && (
         <DepartmentFilter cases={workflowCases} active={departmentFocus} onChange={(role) => {
@@ -1995,6 +2356,7 @@ function Taches({
           onAction(role === 'all' ? 'Tous les départements affichés.' : `Dossiers ${roleLabels[role]} affichés.`)
         }} />
       )}
+      <ImportantDossierDates cases={visibleCases} />
       {user.role === 'dg' && (
         <Panel title="Attribuer une tâche DG">
           <form className="task-assignment" onSubmit={createTask}>
@@ -2053,6 +2415,7 @@ function Taches({
           onComplete={() => completeStep(openedCase.id)}
           onAlert={() => alertCase(openedCase.id)}
           onTransfer={(nextRole) => transferCase(openedCase.id, nextRole)}
+          onCloseCase={() => closeCaseByDg(openedCase.id)}
         />
       )}
     </>
@@ -2076,6 +2439,33 @@ function SimpleTaskHeader({ cases, user, notifications }: { cases: WorkflowCase[
         <article><strong>{blocked.length}</strong><span>Blocages</span></article>
         <article><strong>{notifications}</strong><span>Messages</span></article>
       </div>
+    </section>
+  )
+}
+
+function ImportantDossierDates({ cases }: { cases: WorkflowCase[] }) {
+  const important = [...cases]
+    .filter((item) => item.status !== 'Terminé')
+    .sort((a, b) => getPriorityScore(b) - getPriorityScore(a))
+    .slice(0, 5)
+
+  return (
+    <section className="important-dates">
+      <div>
+        <span className="eyebrow">Dates dossiers</span>
+        <strong>Priorités à surveiller</strong>
+      </div>
+      {important.map((item) => (
+        <article key={`date-${item.id}`}>
+          <CalendarDays size={15} />
+          <span>
+            <b>{item.due}</b>
+            {item.id} - {roleLabels[item.currentRole]}
+          </span>
+          <Status value={item.priority} />
+        </article>
+      ))}
+      {important.length === 0 && <p className="muted">Aucune date urgente.</p>}
     </section>
   )
 }
@@ -2114,7 +2504,7 @@ function SimpleDepartmentBoard({
   user: UserAccount
   onOpen: (item: WorkflowCase) => void
 }) {
-  const departments = user.role === 'dg' ? workflowRoles : [user.role]
+  const departments = user.role === 'dg' ? ['dg' as const, ...workflowRoles] : [user.role]
 
   return (
     <div className="department-board">
@@ -2186,6 +2576,7 @@ function DossierDetailsModal({
   onComplete,
   onAlert,
   onTransfer,
+  onCloseCase,
 }: {
   item: WorkflowCase
   user: UserAccount
@@ -2198,10 +2589,14 @@ function DossierDetailsModal({
   onComplete: () => void
   onAlert: () => void
   onTransfer: (role: Role) => void
+  onCloseCase: () => void
 }) {
   const isDg = user.role === 'dg'
   const isCurrentOwner = item.currentRole === user.role
   const sla = getSlaInfo(item)
+  const doneSteps = item.steps.filter((step) => step.status === 'done')
+  const canCloseCase = isDg && item.status === 'Retour DG' && doneSteps.length > 0
+  const allDepartmentsDone = item.steps.every((step) => step.status === 'done')
 
   return (
     <div className="dossier-modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -2278,18 +2673,30 @@ function DossierDetailsModal({
         {isDg ? (
           <div className="dg-action-box">
             <strong>Décision Direction Générale</strong>
-            <span>Transférer ce dossier vers un seul département.</span>
+            <span>
+              {item.status === 'Retour DG'
+                ? `${roleLabels[item.alerts.at(-1)?.from ?? item.currentRole]} a terminé son travail. Choisissez un autre département ou clôturez le dossier.`
+                : 'Transférer ce dossier vers un seul département.'}
+            </span>
             <div className="transfer-buttons">
               {workflowRoles.map((role) => (
                 <button disabled={role === item.currentRole} key={role} type="button" onClick={() => onTransfer(role)}>
-                  {roleLabels[role]}
+                  {item.steps.some((step) => step.role === role && step.status === 'done') ? `Rouvrir ${roleLabels[role]}` : roleLabels[role]}
                 </button>
               ))}
             </div>
-            <button className="secondary-action danger" type="button" onClick={onAlert}>
-              <Bell size={15} />
-              Relancer le département actuel
-            </button>
+            {canCloseCase && (
+              <button className="primary-action" type="button" onClick={onCloseCase}>
+                <ClipboardCheck size={15} />
+                {allDepartmentsDone ? 'Clôturer définitivement' : 'Clôturer le dossier'}
+              </button>
+            )}
+            {item.currentRole !== 'dg' && (
+              <button className="secondary-action danger" type="button" onClick={onAlert}>
+                <Bell size={15} />
+                Relancer le département actuel
+              </button>
+            )}
           </div>
         ) : (
           <div className="department-reply">
@@ -2748,8 +3155,8 @@ function Status({ value }: { value: ReactNode }) {
   const text = String(value)
   const className = useMemo<StatusTone>(() => {
     if (['En retard', 'Haute', 'Urgent', 'Bloqué', 'Rupture', 'PDF', 'Suspendu', 'Priorité obligatoire', 'Hors SLA', 'Critique', 'Action obligatoire', 'Blocage rouge DG', 'Escalade immédiate', 'À accélérer', 'Non lue'].includes(text)) return 'danger'
-    if (['À échéance', 'Moyenne', 'Faible stock', 'Délai noté', 'À surveiller', 'Relance automatique', 'Promesse client', 'Partiel'].includes(text)) return 'warning'
-    if (['À venir', 'En cours', 'Excel', 'Direction Générale', 'Finance', 'Comptabilité', 'Approvisionnement', 'Commercial', 'Information', 'Réponse reçue', 'À recouvrer', 'Lue'].includes(text) || text.startsWith('SLA ')) return 'info'
+    if (['À échéance', 'Moyenne', 'Faible stock', 'Délai noté', 'À surveiller', 'Relance automatique', 'Promesse client', 'Partiel', 'Chèque', 'Traite', 'À renégocier'].includes(text)) return 'warning'
+    if (['À venir', 'En cours', 'Retour DG', 'Validation DG', 'Excel', 'Direction Générale', 'Finance', 'Comptabilité', 'Approvisionnement', 'Commercial', 'Information', 'Réponse reçue', 'À recouvrer', 'Lue', 'Virement', 'En attente', 'Déposé'].includes(text) || text.startsWith('SLA ')) return 'info'
     return 'success'
   }, [text])
 
@@ -2758,6 +3165,32 @@ function Status({ value }: { value: ReactNode }) {
 
 function getCollectionRemaining(item: CollectionCase) {
   return Math.max(0, item.assignedAmount - item.recoveredAmount)
+}
+
+function parsePaymentSchedule(value: string, paidAmount: number): PaymentSchedule[] {
+  const paidLine: PaymentSchedule = {
+    id: Date.now(),
+    mode: 'Espèces',
+    amount: paidAmount,
+    dueDate: 'Aujourd’hui',
+    status: 'Payé',
+  }
+  const futureLines = value
+    .split('\n')
+    .map((line, index) => {
+      const [modeRaw = 'Chèque', amountRaw = '0', dueDateRaw = 'À préciser'] = line.split(';').map((part) => part.trim())
+      const mode = ['Espèces', 'Chèque', 'Traite', 'Virement'].includes(modeRaw) ? modeRaw as PaymentSchedule['mode'] : 'Chèque'
+      return {
+        id: Date.now() + index + 1,
+        mode,
+        amount: Number(amountRaw.replace(/[^\d]/g, '')) || 0,
+        dueDate: dueDateRaw,
+        status: 'En attente' as const,
+      }
+    })
+    .filter((payment) => payment.amount > 0)
+
+  return [paidLine, ...futureLines]
 }
 
 function RowActions({ label, onAction }: { label: string; onAction: (message: string) => void }) {
@@ -2831,6 +3264,7 @@ function hasPendingAnswer(item: WorkflowCase, user: UserAccount) {
 
 function getNextActionLabel(item: WorkflowCase, user: UserAccount) {
   if (item.status === 'Terminé') return 'Dossier terminé, historique disponible.'
+  if (item.status === 'Retour DG') return 'Département terminé. La DG doit décider: transférer, rouvrir ou clôturer.'
   if (user.role === 'dg') {
     const lastReply = item.alerts.findLast((alert) => alert.response || alert.to === 'dg')
     if (lastReply?.promisedAt) return `Décider sur le délai proposé: ${lastReply.promisedAt}.`
@@ -2862,6 +3296,7 @@ function getSlaInfo(item: WorkflowCase) {
   const score = getPriorityScore(item)
   const relances = item.alerts.filter((alert) => alert.to === item.currentRole && !alert.response).length
   if (item.status === 'Terminé') return { label: 'Clôturé', tone: 'success' as StatusTone, detail: 'Historique verrouillé' }
+  if (item.status === 'Retour DG') return { label: 'Validation DG', tone: 'info' as StatusTone, detail: 'En attente de décision Direction Générale' }
   if (item.status === 'Bloqué' || score >= 82 || relances >= 3) return { label: 'Hors SLA', tone: 'danger' as StatusTone, detail: `Escalade DG requise - SLA ${hours}h` }
   if (score >= 64 || relances >= 2) return { label: 'À surveiller', tone: 'warning' as StatusTone, detail: `Relance avant dépassement - SLA ${hours}h` }
   return { label: `SLA ${hours}h`, tone: 'info' as StatusTone, detail: `Service attendu: ${roleLabels[item.currentRole]}` }
