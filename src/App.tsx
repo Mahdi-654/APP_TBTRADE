@@ -89,8 +89,29 @@ import type {
   WorkflowCase,
   StatusTone,
   Column,
+  DossierStep,
 }
 from './domain/tradeData'
+
+const WORKFLOW_STORAGE_KEY = 'tbtrade.workflow-cases.v1'
+const COLLECTION_STORAGE_KEY = 'tbtrade.collection-cases.v1'
+
+const roleToDossierStep: Record<Role, DossierStep> = {
+  dg: 'DIRECTION_GENERALE',
+  commercial: 'COMMERCIAL',
+  appro: 'APPROVISIONNEMENT',
+  finance: 'FINANCE',
+  compta: 'COMPTABILITE',
+}
+
+function loadStoredState<T>(key: string, fallback: T): T {
+  try {
+    const stored = window.localStorage.getItem(key)
+    return stored ? JSON.parse(stored) as T : fallback
+  } catch {
+    return fallback
+  }
+}
 
 type CollectionDraft = {
   recoveredAmount: string
@@ -151,13 +172,24 @@ function App() {
   const [filters, setFilters] = useState<FilterState>(initialFilters)
   const [message, setMessage] = useState('Prêt à connecter la base de production dès réception du clone.')
   const [stocks, setStocks] = useState<StockRow[]>(initialStockRows)
-  const [workflowCases, setWorkflowCases] = useState<WorkflowCase[]>(() => mergeAutomaticStockCases(initialWorkflowCases, initialStockRows, initialUsers))
-  const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialCollectionCases)
+  const [workflowCases, setWorkflowCases] = useState<WorkflowCase[]>(() => loadStoredState(
+    WORKFLOW_STORAGE_KEY,
+    mergeAutomaticStockCases(initialWorkflowCases, initialStockRows, initialUsers),
+  ))
+  const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(() => loadStoredState(COLLECTION_STORAGE_KEY, initialCollectionCases))
   const [collectionDrafts, setCollectionDrafts] = useState(createInitialCollectionDrafts)
   const [departmentFocus, setDepartmentFocus] = useState<Role | 'all'>('all')
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
   const [notificationCaseToOpen, setNotificationCaseToOpen] = useState<string | null>(null)
   const current = screens[active]
+
+  useEffect(() => {
+    window.localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(workflowCases))
+  }, [workflowCases])
+
+  useEffect(() => {
+    window.localStorage.setItem(COLLECTION_STORAGE_KEY, JSON.stringify(collectionCases))
+  }, [collectionCases])
 
   const login = (email: string) => {
     const user = accounts.find((item) => item.email.toLowerCase() === email.toLowerCase() && item.status === 'Actif') ?? accounts[0]
@@ -1835,6 +1867,28 @@ function Taches({
       currentRole: draft.firstRole,
       owner: firstOwner.name,
       status: draft.priority === 'Urgent' ? 'Bloqué' : 'En cours',
+      dossierType: 'Vente',
+      client: draft.supplier,
+      currentStep: roleToDossierStep[draft.firstRole],
+      nextAction: draft.title,
+      locked: false,
+      documents: [],
+      closureChecklist: [
+        { key: 'order', label: 'Commande validée', completed: false },
+        { key: 'stock', label: 'Stock et livraison confirmés', completed: false },
+        { key: 'invoice', label: 'Facture client rattachée', completed: false },
+        { key: 'payments', label: 'Toutes les échéances réglées', completed: false },
+        { key: 'accounting', label: 'Rapprochement comptable validé', completed: false },
+        { key: 'documents', label: 'Documents obligatoires présents', completed: false },
+      ],
+      auditTrail: [{
+        id: Date.now(),
+        actor: user.name,
+        department: user.service,
+        action: 'Création et affectation',
+        reason: `${draft.title} affecté à ${roleLabels[draft.firstRole]}`,
+        createdAt: new Date().toLocaleString('fr-FR'),
+      }],
       steps,
       alerts: [
         {
@@ -1911,6 +1965,20 @@ function Taches({
         currentRole: 'dg' as const,
         owner: dgOwner,
         status: 'Retour DG' as const,
+        currentStep: 'DIRECTION_GENERALE' as const,
+        nextAction: 'Décision DG : transférer vers l’étape suivante ou demander une correction',
+        locked: true,
+        auditTrail: [
+          ...(item.auditTrail ?? []),
+          {
+            id: Date.now(),
+            actor: user.name,
+            department: user.service,
+            action: 'Étape validée',
+            reason: recoverySummary ?? `Traitement ${user.service} terminé`,
+            createdAt: new Date().toLocaleString('fr-FR'),
+          },
+        ],
         alerts: [
           ...item.alerts,
           {
@@ -1948,6 +2016,22 @@ function Taches({
         currentRole: nextRole,
         owner: nextOwner.name,
         status: 'En cours' as const,
+        currentStep: roleToDossierStep[nextRole],
+        nextAction: isReopeningDoneStep
+          ? `Corriger le dossier selon l’observation DG : ${normalizedObservation}`
+          : `Traiter le dossier au service ${roleLabels[nextRole]}`,
+        locked: false,
+        auditTrail: [
+          ...(item.auditTrail ?? []),
+          {
+            id: Date.now(),
+            actor: user.name,
+            department: user.service,
+            action: isReopeningDoneStep ? 'Réouverture' : 'Transfert',
+            reason: isReopeningDoneStep ? normalizedObservation : `Affectation à ${roleLabels[nextRole]}`,
+            createdAt: new Date().toLocaleString('fr-FR'),
+          },
+        ],
         steps: workflowRoles.map((role) => ({
           role,
           label: roleLabels[role],
@@ -1981,6 +2065,17 @@ function Taches({
   }
 
   const closeCaseByDg = (caseId: string) => {
+    const target = workflowCases.find((item) => item.id === caseId)
+    const incompleteChecks = target?.closureChecklist?.filter((check) => !check.completed) ?? []
+    const openSteps = target?.steps.filter((step) => step.status !== 'done') ?? []
+    if (incompleteChecks.length > 0 || openSteps.length > 0) {
+      const reasons = [
+        ...incompleteChecks.map((check) => check.label),
+        ...openSteps.map((step) => `${step.label} non terminé`),
+      ]
+      onAction(`Clôture refusée : ${reasons.join(', ')}.`)
+      return
+    }
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId) return item
       return {
@@ -1988,6 +2083,20 @@ function Taches({
         currentRole: 'dg' as const,
         owner: getPrimaryUserForRole('dg', accounts).name,
         status: 'Terminé' as const,
+        currentStep: 'CLOTURE' as const,
+        nextAction: 'Aucune action : dossier clôturé',
+        locked: true,
+        auditTrail: [
+          ...(item.auditTrail ?? []),
+          {
+            id: Date.now(),
+            actor: user.name,
+            department: user.service,
+            action: 'Clôture',
+            reason: 'Tous les contrôles obligatoires sont validés',
+            createdAt: new Date().toLocaleString('fr-FR'),
+          },
+        ],
         alerts: [
           ...item.alerts,
           {
@@ -2251,6 +2360,7 @@ function DossierDetailsModal({
   onTransfer: (role: Role) => void
   onCloseCase: () => void
 }) {
+  const [detailTab, setDetailTab] = useState<'Résumé' | 'Recouvrement' | 'Parcours' | 'Documents' | 'Historique'>('Résumé')
   const isDg = user.role === 'dg'
   const isCurrentOwner = item.currentRole === user.role
   const sla = getSlaInfo(item)
@@ -2274,23 +2384,45 @@ function DossierDetailsModal({
         </header>
 
         <div className="dossier-modal-summary">
+          <article><span>Client</span><strong>{item.client ?? item.supplier}</strong></article>
           <article><span>Partie</span><strong>{item.supplier}</strong></article>
           <article><span>Montant</span><strong>{item.amount}</strong></article>
-          <article><span>Échéance</span><strong>{item.due}</strong></article>
           <article><span>Responsable</span><strong>{item.owner}</strong></article>
-          <article><span>Priorité</span><Status value={item.priority} /></article>
           <article><span>Statut</span><Status value={item.status} /></article>
-          <article><span>SLA</span><strong>{sla.detail}</strong></article>
-          <article><span>Score</span><strong>{getPriorityScore(item)}/100</strong></article>
+          <article><span>Étape</span><strong>{item.currentStep ?? roleLabels[item.currentRole]}</strong></article>
         </div>
 
-        <div className="next-action-strip">
-          <span><Gauge size={15} /> Action</span>
-          <strong>{getNextActionLabel(item, user)}</strong>
-          <small>{sla.label}</small>
-        </div>
+        <nav className="dossier-detail-tabs" aria-label="Sections du dossier">
+          {(['Résumé', 'Recouvrement', 'Parcours', 'Documents', 'Historique'] as const).map((tab) => (
+            <button className={detailTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => setDetailTab(tab)}>
+              {tab}
+            </button>
+          ))}
+        </nav>
 
-        {collectionCase && (
+        {detailTab === 'Résumé' && (
+          <>
+            <div className="next-action-strip">
+              <span><Gauge size={15} /> Prochaine action</span>
+              <strong>{item.nextAction ?? getNextActionLabel(item, user)}</strong>
+              <small>{item.due} - {sla.label}</small>
+            </div>
+            <div className="dossier-modal-section">
+              <h3>Contrôles avant clôture</h3>
+              <div className="closure-checklist">
+                {(item.closureChecklist ?? []).map((check) => (
+                  <article className={check.completed ? 'done' : 'pending'} key={check.key}>
+                    <CheckCircle2 size={16} />
+                    <span>{check.label}</span>
+                    <strong>{check.completed ? 'Validé' : 'À traiter'}</strong>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {detailTab === 'Recouvrement' && collectionCase && (
           <div className="dossier-modal-section official-recovery-box">
             <h3>Recouvrement officiel</h3>
             <div className="official-recovery-summary">
@@ -2304,7 +2436,7 @@ function DossierDetailsModal({
           </div>
         )}
 
-        {item.id.startsWith('DOS-STK') && (
+        {detailTab === 'Résumé' && item.id.startsWith('DOS-STK') && (
           <div className="stock-order-note">
             <PackageSearch size={16} />
             <span>
@@ -2314,7 +2446,7 @@ function DossierDetailsModal({
           </div>
         )}
 
-        <div className="dossier-modal-section">
+        {detailTab === 'Parcours' && <div className="dossier-modal-section">
           <h3>Parcours par département</h3>
           <div className="workflow-steps">
             {item.steps.map((step) => (
@@ -2334,10 +2466,34 @@ function DossierDetailsModal({
               </span>
             </div>
           )}
-        </div>
+        </div>}
 
-        <div className="dossier-modal-section">
+        {detailTab === 'Documents' && (
+          <div className="dossier-modal-section">
+            <h3>Documents liés au dossier</h3>
+            <div className="dossier-document-list">
+              {(item.documents ?? []).map((document) => (
+                <article key={document.id}>
+                  <FileText size={16} />
+                  <span><strong>{document.filename}</strong><small>{document.type}</small></span>
+                  <small>{document.uploadedBy} - {document.uploadedAt}</small>
+                </article>
+              ))}
+              {(item.documents ?? []).length === 0 && <p className="muted">Aucun document rattaché.</p>}
+            </div>
+          </div>
+        )}
+
+        {detailTab === 'Historique' && <div className="dossier-modal-section">
           <h3>Historique et messages</h3>
+          <div className="audit-list">
+            {(item.auditTrail ?? []).map((entry) => (
+              <article key={entry.id}>
+                <ClipboardCheck size={15} />
+                <span><strong>{entry.action} - {entry.actor}</strong><p>{entry.reason}</p><small>{entry.department} - {entry.createdAt}</small></span>
+              </article>
+            ))}
+          </div>
           <div className="message-thread">
             {item.alerts.map((alert) => (
               <article key={alert.id}>
@@ -2352,9 +2508,9 @@ function DossierDetailsModal({
             ))}
             {item.alerts.length === 0 && <p className="muted">Aucun message enregistré.</p>}
           </div>
-        </div>
+        </div>}
 
-        {isDg ? (
+        {detailTab === 'Résumé' && (isDg ? (
           <div className="dg-action-box">
             <strong>Décision Direction Générale</strong>
             <span>
@@ -2395,7 +2551,7 @@ function DossierDetailsModal({
               )}
             </div>
           </div>
-        )}
+        ))}
       </section>
     </div>
   )

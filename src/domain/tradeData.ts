@@ -60,6 +60,41 @@ export type WorkflowAlert = {
   kind?: 'dg-alert' | 'reply' | 'department-message' | 'stock-auto' | 'dg-observation'
 }
 
+export type DossierStep =
+  | 'COMMERCIAL'
+  | 'STOCK'
+  | 'APPROVISIONNEMENT'
+  | 'FINANCE'
+  | 'LIVRAISON'
+  | 'FACTURATION'
+  | 'RECOUVREMENT'
+  | 'COMPTABILITE'
+  | 'DIRECTION_GENERALE'
+  | 'CLOTURE'
+
+export type DossierDocument = {
+  id: string
+  type: string
+  filename: string
+  uploadedBy: string
+  uploadedAt: string
+}
+
+export type AuditEntry = {
+  id: number
+  actor: string
+  department: string
+  action: string
+  reason: string
+  createdAt: string
+}
+
+export type ClosureCheck = {
+  key: string
+  label: string
+  completed: boolean
+}
+
 export type WorkflowCase = {
   id: string
   title: string
@@ -75,6 +110,15 @@ export type WorkflowCase = {
   steps: WorkflowStep[]
   alerts: WorkflowAlert[]
   collectionCaseId?: string
+  dossierType?: 'Vente' | 'Achat' | 'Stock'
+  client?: string
+  commercial?: string
+  currentStep?: DossierStep
+  nextAction?: string
+  locked?: boolean
+  documents?: DossierDocument[]
+  auditTrail?: AuditEntry[]
+  closureChecklist?: ClosureCheck[]
 }
 
 export type StockRow = {
@@ -335,6 +379,28 @@ export const initialWorkflowCases: WorkflowCase[] = [
     owner: 'Mahdi',
     status: 'En cours',
     collectionCaseId: 'REC-2027-001',
+    dossierType: 'Vente',
+    client: 'Mytech',
+    commercial: 'Mahdi',
+    currentStep: 'RECOUVREMENT',
+    nextAction: 'Valider le plan de recouvrement et le transmettre à la DG',
+    locked: false,
+    documents: [
+      { id: 'DOC-001', type: 'FACTURE_CLIENT', filename: 'FAC-2027-001', uploadedBy: 'Mahdi', uploadedAt: '08/09/2026 14:00' },
+      { id: 'DOC-002', type: 'PREUVE_PAIEMENT', filename: 'REG-2027-001', uploadedBy: 'Mahdi', uploadedAt: '08/09/2026 14:02' },
+    ],
+    auditTrail: [
+      { id: 1, actor: 'Direction Générale', department: 'DG', action: 'Création et affectation', reason: 'Commande client Mytech à suivre', createdAt: '08/09/2026 14:00' },
+      { id: 2, actor: 'Mahdi', department: 'Commercial', action: 'Règlement enregistré', reason: '4 000 TND reçus sur 5 000 TND', createdAt: '08/09/2026 14:02' },
+    ],
+    closureChecklist: [
+      { key: 'order', label: 'Commande validée', completed: true },
+      { key: 'stock', label: 'Stock et livraison confirmés', completed: true },
+      { key: 'invoice', label: 'Facture client rattachée', completed: true },
+      { key: 'payments', label: 'Toutes les échéances réglées', completed: false },
+      { key: 'accounting', label: 'Rapprochement comptable validé', completed: false },
+      { key: 'documents', label: 'Documents obligatoires présents', completed: true },
+    ],
     steps: [
       { role: 'finance', label: 'Impact trésorerie', status: 'waiting', note: 'À vérifier après plan commercial' },
       { role: 'compta', label: 'Facture client', status: 'waiting', note: 'Rapprocher facture et règlement' },

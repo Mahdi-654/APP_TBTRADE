@@ -3143,6 +3143,83 @@ tbody tr:hover {
   font-size: 15px;
 }
 
+.dossier-detail-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  border-bottom: 1px solid #e3ebf5;
+}
+
+.dossier-detail-tabs button {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #60758d;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dossier-detail-tabs button.active {
+  border-bottom-color: #1769aa;
+  color: #1769aa;
+}
+
+.closure-checklist,
+.dossier-document-list,
+.audit-list {
+  display: grid;
+  gap: 8px;
+}
+
+.closure-checklist article,
+.dossier-document-list article,
+.audit-list article {
+  min-height: 48px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e0e9f4;
+  border-radius: 6px;
+  background: #fbfdff;
+  color: #304861;
+}
+
+.closure-checklist article.done {
+  border-left: 3px solid #2e8b67;
+}
+
+.closure-checklist article.pending {
+  border-left: 3px solid #d88a20;
+}
+
+.closure-checklist strong,
+.dossier-document-list small,
+.audit-list small {
+  color: #60758d;
+  font-size: 11px;
+}
+
+.dossier-document-list span,
+.audit-list span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.audit-list p {
+  margin: 0;
+  color: #4e647c;
+  font-size: 12px;
+}
+
 .transfer-buttons {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -4456,6 +4533,9 @@ tbody tr:hover {
   .dossier-box,
   .dossier-open-area,
   .dossier-modal-summary,
+  .closure-checklist article,
+  .dossier-document-list article,
+  .audit-list article,
   .transfer-buttons,
   .simple-case-list button,
   .simple-alerts article {
