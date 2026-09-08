@@ -3470,6 +3470,202 @@ tbody tr:hover {
   transform: translateY(-2px);
 }
 
+.deployment-board,
+.source-config-board,
+.recommendation-board,
+.phase-board {
+  display: grid;
+  gap: 14px;
+}
+
+.deployment-board {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.deployment-board article {
+  min-height: 98px;
+  padding: 15px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 11px;
+  border: 1px solid var(--line, #d9e3ee);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft, 0 14px 38px rgba(18, 39, 68, 0.08));
+}
+
+.deployment-board svg {
+  padding: 7px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--blue, #276ed8), var(--teal, #0fa9a4));
+}
+
+.deployment-board strong,
+.source-config-board h2,
+.recommendation-board h2 {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--ink, #142033);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.deployment-board span,
+.source-config-main p,
+.source-module-list span,
+.source-module-list small,
+.recommendation-list strong {
+  color: var(--ink-soft, #52657c);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.source-config-board {
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.05fr);
+  padding: 18px;
+  border: 1px solid var(--line, #d9e3ee);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(39, 110, 216, 0.08), transparent 48%),
+    #ffffff;
+  box-shadow: var(--shadow-soft, 0 14px 38px rgba(18, 39, 68, 0.08));
+}
+
+.source-config-main {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.source-variable-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.source-variable-grid article,
+.source-module-list article,
+.recommendation-list article,
+.phase-board article {
+  border: 1px solid #e0e8f2;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fbfe);
+}
+
+.source-variable-grid article {
+  min-height: 64px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.source-variable-grid strong {
+  color: var(--ink, #142033);
+  font-size: 11px;
+}
+
+.source-variable-grid span {
+  color: var(--teal, #0fa9a4);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.source-module-list,
+.recommendation-list {
+  display: grid;
+  gap: 9px;
+}
+
+.source-module-list article {
+  min-height: 66px;
+  padding: 11px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+}
+
+.source-module-list svg {
+  color: var(--green, #159465);
+  margin-top: 2px;
+}
+
+.source-module-list strong {
+  display: block;
+  color: var(--ink, #142033);
+  font-size: 13px;
+}
+
+.source-module-list small {
+  display: block;
+  margin-top: 3px;
+  color: var(--blue, #276ed8);
+}
+
+.recommendation-board {
+  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1fr);
+  padding: 18px;
+  border: 1px solid var(--line, #d9e3ee);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: var(--shadow-soft, 0 14px 38px rgba(18, 39, 68, 0.08));
+}
+
+.recommendation-list article {
+  min-height: 54px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.phase-board {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+
+.phase-board article {
+  min-height: 92px;
+  padding: 11px;
+  display: grid;
+  align-content: space-between;
+  gap: 8px;
+}
+
+.phase-board b {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e9eff7;
+  color: var(--ink-soft, #52657c);
+  font-size: 12px;
+}
+
+.phase-board span {
+  color: var(--ink, #142033);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.phase-board article.done b {
+  background: #eaf8f0;
+  color: var(--green, #159465);
+}
+
+.phase-board article.next {
+  border-color: #bed8ff;
+  background: #f3f8ff;
+}
+
+.phase-board article.next b {
+  background: var(--blue, #276ed8);
+  color: #ffffff;
+}
+
 .profile-layout {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(280px, 0.7fr);
@@ -3537,6 +3733,11 @@ tbody tr:hover {
   .two-one,
   .half,
   .report-grid,
+  .deployment-board,
+  .source-config-board,
+  .recommendation-board,
+  .source-variable-grid,
+  .phase-board,
   .profile-layout,
   .control-kpis,
   .department-load,
@@ -3712,6 +3913,14 @@ tbody tr:hover {
   .two-one,
   .half,
   .report-grid,
+  .deployment-board,
+  .source-config-board,
+  .recommendation-board,
+  .source-variable-grid,
+  .phase-board,
+  .deployment-board article,
+  .source-module-list article,
+  .recommendation-list article,
   .profile-layout,
   .control-kpis,
   .department-load,
@@ -4066,6 +4275,20 @@ tbody tr:hover {
   background: #62d2c9;
 }
 
+.brand {
+  min-height: 54px;
+  padding-top: 4px;
+}
+
+.brand img {
+  width: 132px;
+  height: 38px;
+  padding: 5px 7px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.18);
+}
+
 .sidebar button:hover,
 .sidebar button.active {
   background: linear-gradient(135deg, rgba(39, 110, 216, 0.95), rgba(15, 169, 164, 0.88));
@@ -4118,6 +4341,52 @@ tbody tr:hover {
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 60%),
     linear-gradient(180deg, #ffffff, #fbfcfe);
+}
+
+.page[data-accent="blue"] {
+  --accent: var(--blue);
+}
+
+.page[data-accent="green"] {
+  --accent: var(--green);
+}
+
+.page[data-accent="orange"] {
+  --accent: var(--amber);
+}
+
+.page[data-accent="cyan"] {
+  --accent: var(--teal);
+}
+
+.page[data-accent="violet"] {
+  --accent: var(--violet);
+}
+
+.erp-readiness {
+  border-left: 4px solid var(--teal);
+}
+
+.erp-checklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.erp-checklist span {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.erp-checklist svg {
+  color: var(--green);
+  flex: 0 0 auto;
+  margin-top: 1px;
 }
 
 .module-header-icon,

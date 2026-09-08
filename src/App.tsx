@@ -534,6 +534,11 @@ function ErpReadiness({ onOpenScreen }: { onOpenScreen: (screen: ScreenKey) => v
     ['Comptabilité', 'Lettrage, pièces comptables, factures et rapprochements.', FileSpreadsheet],
     ['FNR', 'Factures Non Réglées, soldes clients et actions commerciales associées.', ReceiptText],
   ] as const
+  const checks = [
+    'Lecture des dossiers clients, fournisseurs, factures et règlements depuis Sage 100',
+    'Contrôle des soldes, échéances, retards et pièces sans double saisie',
+    'Recommandations DG sur recouvrement, paiement fournisseur et rupture stock',
+  ]
   const phases = [
     'Analyse des besoins',
     'Architecture et modèle de données',
@@ -549,13 +554,18 @@ function ErpReadiness({ onOpenScreen }: { onOpenScreen: (screen: ScreenKey) => v
   return (
     <section className="erp-readiness" aria-label="Architecture ERP configurable">
       <div className="erp-readiness-copy">
-        <span className="eyebrow">Architecture ERP indépendante</span>
-        <h2>Application prête pour Sage 100, sans source verrouillée.</h2>
-        <p>La version actuelle fonctionne avec des données de démonstration. Les connexions seront configurées plus tard par variables `.env`, afin de brancher Sage 100 ou tout autre ERP compatible sans modifier le code applicatif.</p>
+        <span className="eyebrow">Consultation ERP Sage 100</span>
+        <h2>Un cockpit de dossiers pour consulter, décider et relancer.</h2>
+        <p>La version actuelle fonctionne avec des données de démonstration structurées comme les dossiers Sage 100. La connexion production sera pilotée par variables `.env` afin de brancher Sage 100, SQL ou une API passerelle sans réécrire l’interface.</p>
         <div className="erp-status-row">
-          <Status value="Source non connectée" />
-          <Status value=".env prévu" />
+          <Status value="Sage 100 prévu" />
+          <Status value="Lecture ERP" />
           <Status value="Render ready" />
+        </div>
+        <div className="erp-checklist">
+          {checks.map((check) => (
+            <span key={check}><CheckCircle2 size={14} /> {check}</span>
+          ))}
         </div>
       </div>
       <div className="erp-module-grid">
@@ -2317,17 +2327,25 @@ function Rapports({ onAction }: { onAction: (message: string) => void }) {
     ['Roadmap ERP', ServerCog, 'orange'],
   ] as const
   const integrationModules = [
-    ['Commercial', 'Clients, ventes, factures, commerciaux, activités et relances de recouvrement.'],
-    ['Finance', 'Solde de trésorerie, encaissements attendus, engagements fournisseurs, chèques et traites.'],
-    ['Comptabilité', 'Pièces comptables, rapprochements, lettrage et états de contrôle.'],
-    ['FNR', 'Factures Non Réglées, soldes clients, échéances et responsables commerciaux.'],
-    ['Tiers', 'Création et mise à jour automatique des annuaires clients et fournisseurs.'],
+    ['Commercial', 'Clients, ventes, factures, commerciaux, activités et relances de recouvrement.', 'Clients, DocEntete, DocLigne, ReglementT'],
+    ['Finance', 'Solde de trésorerie, encaissements attendus, engagements fournisseurs, chèques et traites.', 'Reglement, Ecritures, Banque, Echeances'],
+    ['Comptabilité', 'Pièces comptables, rapprochements, lettrage et états de contrôle.', 'F_ECRITUREC, F_COMPTEG, F_COMPTEA'],
+    ['FNR', 'Factures Non Réglées, soldes clients, échéances et responsables commerciaux.', 'Factures ouvertes, soldes auxiliaires'],
+    ['Tiers', 'Création et mise à jour automatique des annuaires clients et fournisseurs.', 'Clients, Fournisseurs, familles tarifaires'],
+  ] as const
+  const recommendations = [
+    ['Priorité 1', 'Brancher une passerelle lecture seule Sage 100 pour consulter les dossiers réels sans risque d’écriture au démarrage.'],
+    ['Priorité 2', 'Créer une fiche dossier unique: client/fournisseur, pièces liées, solde, échéances, statut, responsable et prochaine action.'],
+    ['Priorité 3', 'Ajouter des règles de recommandation: retard critique, fournisseur bloqué, stock sous seuil, promesse client non tenue.'],
+    ['Priorité 4', 'Activer l’audit: source ERP, date de synchronisation, utilisateur, décision DG et preuve jointe.'],
+    ['Priorité 5', 'Passer en production Render avec variables d’environnement, domaine, monitoring et sauvegarde du connecteur.'],
   ] as const
   const sourceVariables = [
     ['VITE_ERP_PROVIDER', 'sage100, api, sql ou custom'],
     ['VITE_ERP_BASE_URL', 'URL API ou passerelle applicative'],
     ['VITE_ERP_COMPANY_CODE', 'Code société à synchroniser'],
     ['VITE_SYNC_ENABLED', 'false en maquette, true après connexion'],
+    ['VITE_READONLY_MODE', 'true au lancement production'],
   ] as const
   const projectPhases = [
     'Analyse des besoins métier',
@@ -2345,8 +2363,8 @@ function Rapports({ onAction }: { onAction: (message: string) => void }) {
     <>
       <ModuleHeader
         eyebrow="Pilotage projet"
-        title="Rapports, architecture et suivi de déploiement"
-        description="Centre de lecture pour les rapports métier, la roadmap ERP, les sources configurables et la préparation Render/GitHub."
+        title="Rapports, recommandations et consultation ERP Sage 100"
+        description="Centre de décision pour consulter les dossiers ERP, prioriser les actions DG et préparer la bascule production Render/GitHub."
       />
       <section className="deployment-board">
         <article>
@@ -2386,13 +2404,28 @@ function Rapports({ onAction }: { onAction: (message: string) => void }) {
           </div>
         </div>
         <div className="source-module-list">
-          {integrationModules.map(([module, scope]) => (
+          {integrationModules.map(([module, scope, source]) => (
             <article key={module}>
               <CheckCircle2 size={15} />
               <span>
                 <strong>{module}</strong>
                 {scope}
+                <small>Source Sage 100: {source}</small>
               </span>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="recommendation-board">
+        <div>
+          <span className="eyebrow">Recommandations</span>
+          <h2>Ce qu’il faut ajouter pour devenir une vraie application consultative.</h2>
+        </div>
+        <div className="recommendation-list">
+          {recommendations.map(([priority, detail]) => (
+            <article key={priority}>
+              <Status value={priority} />
+              <strong>{detail}</strong>
             </article>
           ))}
         </div>
