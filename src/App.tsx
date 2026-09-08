@@ -29,6 +29,7 @@ import {
   ReceiptText,
   RefreshCcw,
   Search,
+  ServerCog,
   Send,
   ShieldAlert,
   Siren,
@@ -265,8 +266,25 @@ function LoginPage({ accounts, onLogin, message }: { accounts: UserAccount[]; on
         </div>
         <div className="login-hero-copy">
           <span className="login-kicker">TBTrade</span>
-          <strong>Gestion simple des finances, stocks et tâches.</strong>
-          <small>Connexion par rôle pour accéder uniquement aux modules nécessaires.</small>
+          <strong>Une plateforme claire pour piloter les dossiers commerciaux, finance et stock.</strong>
+          <small>Chaque utilisateur voit ses priorités, répond à la DG et suit le même circuit de décision.</small>
+        </div>
+        <div className="login-signal-grid" aria-label="Indicateurs de pilotage">
+          <article>
+            <Workflow size={17} />
+            <span>Workflow DG</span>
+            <strong>5 services</strong>
+          </article>
+          <article>
+            <Gauge size={17} />
+            <span>Priorités</span>
+            <strong>SLA visible</strong>
+          </article>
+          <article>
+            <Building2 size={17} />
+            <span>Sociétés</span>
+            <strong>TBTrade + TBRetail</strong>
+          </article>
         </div>
       </section>
       <section className="login-panel">
@@ -274,7 +292,7 @@ function LoginPage({ accounts, onLogin, message }: { accounts: UserAccount[]; on
           <div className="login-panel-heading">
             <span className="eyebrow">Connexion sécurisée</span>
             <h1>Accès TB Trade</h1>
-            <p>Choisissez un utilisateur et entrez dans son espace.</p>
+            <p>Choisissez un rôle pour ouvrir un espace de travail organisé par responsabilités.</p>
           </div>
           <form onSubmit={submit}>
             <label>
@@ -440,6 +458,8 @@ function Dashboard({
         onOpenScreen={onOpenScreen}
         onOpenDepartment={onOpenDepartment}
       />
+      <WorkflowPurpose user={user} onOpenScreen={onOpenScreen} />
+      <ErpReadiness onOpenScreen={onOpenScreen} />
       <DashboardEssentials
         user={user}
         visibleCases={visibleCases}
@@ -449,6 +469,115 @@ function Dashboard({
         onAction={onAction}
       />
     </>
+  )
+}
+
+function WorkflowPurpose({
+  user,
+  onOpenScreen,
+}: {
+  user: UserAccount
+  onOpenScreen: (screen: ScreenKey) => void
+}) {
+  const steps = [
+    {
+      icon: ClipboardList,
+      title: '1. Créer ou recevoir un dossier',
+      detail: user.role === 'dg'
+        ? 'La DG attribue une demande au département responsable.'
+        : 'Votre service reçoit uniquement les dossiers qui le concernent.',
+      screen: 'taches' as const,
+    },
+    {
+      icon: MessageSquareText,
+      title: '2. Répondre avec un engagement',
+      detail: 'Chaque action garde une trace: réponse, délai promis, blocage ou preuve envoyée.',
+      screen: 'taches' as const,
+    },
+    {
+      icon: CheckCircle2,
+      title: '3. Retour DG puis clôture',
+      detail: 'La DG transfère au prochain service ou clôture quand la décision est terminée.',
+      screen: user.role === 'dg' ? 'dashboard' as const : roleHome[user.role],
+    },
+  ]
+
+  return (
+    <section className="workflow-purpose" aria-label="Sens du workflow TBTrade">
+      <div className="purpose-copy">
+        <span className="eyebrow">Sens de la plateforme</span>
+        <h2>Un seul circuit pour éviter les dossiers perdus.</h2>
+        <p>TBTrade réunit les factures, les encaissements, les paiements, les stocks et les tâches dans un workflow lisible: priorité, responsable, prochaine action.</p>
+      </div>
+      <div className="purpose-steps">
+        {steps.map((step) => {
+          const Icon = step.icon
+          return (
+            <button key={step.title} type="button" onClick={() => onOpenScreen(step.screen)}>
+              <Icon size={18} />
+              <span>
+                <strong>{step.title}</strong>
+                <small>{step.detail}</small>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function ErpReadiness({ onOpenScreen }: { onOpenScreen: (screen: ScreenKey) => void }) {
+  const modules = [
+    ['Commercial', 'Clients, ventes, factures, commerciaux et activités de recouvrement.', Users],
+    ['Finance', 'Trésorerie, encaissements prévus, paiements fournisseurs et instruments à échéance.', Banknote],
+    ['Comptabilité', 'Lettrage, pièces comptables, factures et rapprochements.', FileSpreadsheet],
+    ['FNR', 'Factures Non Réglées, soldes clients et actions commerciales associées.', ReceiptText],
+  ] as const
+  const phases = [
+    'Analyse des besoins',
+    'Architecture et modèle de données',
+    'Modules ERP métier',
+    'Notifications et workflows',
+    'Connexion .env aux sources',
+    'Intégration Sage 100',
+    'Tests et validation',
+    'Déploiement Render',
+    'Maintenance continue',
+  ]
+
+  return (
+    <section className="erp-readiness" aria-label="Architecture ERP configurable">
+      <div className="erp-readiness-copy">
+        <span className="eyebrow">Architecture ERP indépendante</span>
+        <h2>Application prête pour Sage 100, sans source verrouillée.</h2>
+        <p>La version actuelle fonctionne avec des données de démonstration. Les connexions seront configurées plus tard par variables `.env`, afin de brancher Sage 100 ou tout autre ERP compatible sans modifier le code applicatif.</p>
+        <div className="erp-status-row">
+          <Status value="Source non connectée" />
+          <Status value=".env prévu" />
+          <Status value="Render ready" />
+        </div>
+      </div>
+      <div className="erp-module-grid">
+        {modules.map(([title, detail, Icon]) => (
+          <button key={title} type="button" onClick={() => onOpenScreen(title === 'FNR' ? 'fnr' : title === 'Finance' ? 'tresorerie' : title === 'Commercial' ? 'encaissements' : 'decaissements')}>
+            <Icon size={17} />
+            <span>
+              <strong>{title}</strong>
+              <small>{detail}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="erp-phase-rail">
+        {phases.map((phase, index) => (
+          <span className={index < 4 ? 'active' : index === 4 ? 'next' : ''} key={phase}>
+            <b>{index + 1}</b>
+            {phase}
+          </span>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -583,7 +712,7 @@ function DashboardEssentials({
 
   return (
     <div className="dashboard-simple-grid">
-      <Panel title={user.role === 'dg' ? 'Dossiers à surveiller' : 'Mes dossiers'}>
+      <Panel title={user.role === 'dg' ? 'Dossiers prioritaires à surveiller' : 'Mes dossiers à traiter'}>
         <div className="simple-case-list">
           {importantCases.map((item) => (
             <button key={item.id} type="button" onClick={() => onOpenScreen('taches')}>
@@ -597,7 +726,7 @@ function DashboardEssentials({
           {importantCases.length === 0 && <p className="muted">Aucun dossier actif à traiter.</p>}
         </div>
       </Panel>
-      <Panel title="Alertes simples">
+      <Panel title="Alertes et blocages">
         <div className="simple-alerts">
           {blockedCases.slice(0, 2).map((item) => (
             <article key={item.id}>
@@ -1271,9 +1400,9 @@ function Tresorerie({ onAction }: { onAction: (message: string) => void }) {
   return (
     <>
       <ModuleHeader
-        eyebrow="Module stock"
-        title="Stocks critiques et passation de commande"
-        description="Les ruptures créent des dossiers Appro. La DG garde la décision de transfert vers les autres départements."
+        eyebrow="Module finance"
+        title="Trésorerie, prévisions et arbitrage des paiements"
+        description="Suivi des soldes, encaissements prévus et décaissements à arbitrer avec visibilité DG."
       />
       <MetricGrid
         metrics={[
@@ -1332,7 +1461,7 @@ function StockCommandCenter({
     <section className="stock-command-center">
       <div className="stock-command-copy">
         <span className="eyebrow">Surveillance automatique DG</span>
-        <h2>Seuil stock → notification Appro → passation commande</h2>
+        <h2>Seuil stock, notification Appro, passation commande</h2>
         <p>Chaque article inférieur au seuil crée ou relance un dossier workflow Appro, avec copie visible dans la boîte DG et historique API mock.</p>
       </div>
       <div className="stock-command-flow" aria-label="Flux visuel stock vers approvisionnement">
@@ -1846,7 +1975,7 @@ function SimpleTaskHeader({ cases, user, notifications }: { cases: WorkflowCase[
       <div>
         <span className="eyebrow">Dossiers par département</span>
         <h2>{user.role === 'dg' ? 'Choisir un dossier, puis le transférer au bon département.' : `Dossiers affectés à ${roleLabels[user.role]}.`}</h2>
-        <p>Chaque département affiche des dossiers fermés. Le bouton Ouvrir affiche une seule fiche complète en popup.</p>
+        <p>Chaque colonne représente le responsable actuel. Le bouton Ouvrir affiche la fiche complète, les messages et la décision suivante.</p>
       </div>
       <div className="simple-task-kpis">
         <article><strong>{current.length}</strong><span>Dossiers visibles</span></article>
@@ -2185,10 +2314,97 @@ function Rapports({ onAction }: { onAction: (message: string) => void }) {
     ['Rapport Trésorerie', FileSpreadsheet, 'blue'],
     ['Rapport Stocks', Archive, 'green'],
     ['Rapport Ventes', ChartColumnBig, 'violet'],
+    ['Roadmap ERP', ServerCog, 'orange'],
   ] as const
+  const integrationModules = [
+    ['Commercial', 'Clients, ventes, factures, commerciaux, activités et relances de recouvrement.'],
+    ['Finance', 'Solde de trésorerie, encaissements attendus, engagements fournisseurs, chèques et traites.'],
+    ['Comptabilité', 'Pièces comptables, rapprochements, lettrage et états de contrôle.'],
+    ['FNR', 'Factures Non Réglées, soldes clients, échéances et responsables commerciaux.'],
+    ['Tiers', 'Création et mise à jour automatique des annuaires clients et fournisseurs.'],
+  ] as const
+  const sourceVariables = [
+    ['VITE_ERP_PROVIDER', 'sage100, api, sql ou custom'],
+    ['VITE_ERP_BASE_URL', 'URL API ou passerelle applicative'],
+    ['VITE_ERP_COMPANY_CODE', 'Code société à synchroniser'],
+    ['VITE_SYNC_ENABLED', 'false en maquette, true après connexion'],
+  ] as const
+  const projectPhases = [
+    'Analyse des besoins métier',
+    'Architecture applicative et modèle de données',
+    'Modules Clients, Fournisseurs, Finance, Comptabilité et FNR',
+    'Notifications et workflows interservices',
+    'Connexions configurables par .env',
+    'Intégration Sage 100 ou autre ERP compatible',
+    'Tests et validation utilisateurs',
+    'Déploiement Render avec configuration production',
+    'Maintenance, monitoring et amélioration continue',
+  ]
 
   return (
     <>
+      <ModuleHeader
+        eyebrow="Pilotage projet"
+        title="Rapports, architecture et suivi de déploiement"
+        description="Centre de lecture pour les rapports métier, la roadmap ERP, les sources configurables et la préparation Render/GitHub."
+      />
+      <section className="deployment-board">
+        <article>
+          <ServerCog size={18} />
+          <span>
+            <strong>Source de données</strong>
+            Aucune connexion active. Les variables `.env` détermineront plus tard Sage 100 ou une autre source compatible.
+          </span>
+        </article>
+        <article>
+          <Workflow size={18} />
+          <span>
+            <strong>Synchronisation métier</strong>
+            Import prévu des clients, fournisseurs, factures, paiements, comptabilité et FNR.
+          </span>
+        </article>
+        <article>
+          <Bell size={18} />
+          <span>
+            <strong>Notifications interservices</strong>
+            Finance peut demander des recouvrements commerciaux avant de libérer des paiements fournisseurs.
+          </span>
+        </article>
+      </section>
+      <section className="source-config-board">
+        <div className="source-config-main">
+          <span className="eyebrow">Connexion différée</span>
+          <h2>Les sources seront branchées par configuration, sans modifier le code.</h2>
+          <p>À ce stade, l’application reste indépendante de Sage 100 et des bases externes. Les administrateurs pourront activer la synchronisation plus tard avec des variables d’environnement adaptées au système ERP choisi.</p>
+          <div className="source-variable-grid">
+            {sourceVariables.map(([name, value]) => (
+              <article key={name}>
+                <strong>{name}</strong>
+                <span>{value}</span>
+              </article>
+            ))}
+          </div>
+        </div>
+        <div className="source-module-list">
+          {integrationModules.map(([module, scope]) => (
+            <article key={module}>
+              <CheckCircle2 size={15} />
+              <span>
+                <strong>{module}</strong>
+                {scope}
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+      <section className="phase-board" aria-label="Phases du projet">
+        {projectPhases.map((phase, index) => (
+          <article className={index < 4 ? 'done' : index === 4 ? 'next' : ''} key={phase}>
+            <b>{index + 1}</b>
+            <span>{phase}</span>
+          </article>
+        ))}
+      </section>
       <Panel title="Rapports disponibles">
         <div className="report-grid">
           {available.map(([label, Icon, color]) => (
