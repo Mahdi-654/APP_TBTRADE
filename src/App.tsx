@@ -938,6 +938,12 @@ function Cashflow({
         paymentAction: 'Reste à encaisser selon les échéances client.',
         installmentCount: String(Math.max(1, Math.min(3, item.paymentPlan.filter((payment) => payment.status !== 'Payé').length || 1))),
         firstDueDate: toDateInputValue(item.nextPromiseDate || item.currentDueDate),
+        installmentDates: item.paymentPlan
+          .filter((payment) => payment.status !== 'Payé')
+          .map((payment) => toDateInputValue(payment.dueDate)),
+        installmentAmounts: item.paymentPlan
+          .filter((payment) => payment.status !== 'Payé')
+          .map((payment) => String(payment.amount)),
         paymentMode: item.paymentPlan.find((payment) => payment.status !== 'Payé')?.mode ?? 'Chèque',
         observation: 'Négocier moins d’échéances et confirmer une date ferme.',
         requestedDate: toDateInputValue(item.currentDueDate),
@@ -989,6 +995,8 @@ function Cashflow({
       firstDueDate: draft.firstDueDate,
       installmentCount,
       mode: draft.paymentMode,
+      installmentDates: draft.installmentDates,
+      installmentAmounts: draft.installmentAmounts,
     })
     const generatedComment = remaining > 0
       ? buildPaymentRemark(target, amount, plannedPayments, supplierPressure)
@@ -1248,6 +1256,8 @@ function CommercialRecovery({
     paymentAction: string
     installmentCount: string
     firstDueDate: string
+    installmentDates: string[]
+    installmentAmounts: string[]
     paymentMode: PaymentSchedule['mode']
     observation: string
     requestedDate: string
@@ -1261,6 +1271,8 @@ function CommercialRecovery({
     paymentAction: string
     installmentCount: string
     firstDueDate: string
+    installmentDates: string[]
+    installmentAmounts: string[]
     paymentMode: PaymentSchedule['mode']
     observation: string
     requestedDate: string
@@ -1314,12 +1326,15 @@ function CommercialRecovery({
           const declaredAmount = Number(draft.recoveredAmount.replace(/[^\d]/g, '')) || 0
           const draftRemaining = Math.max(0, item.assignedAmount - declaredAmount)
           const installmentCount = getInstallmentCount(draft.installmentCount)
+          const generatedAmounts = resolveInstallmentAmounts(draftRemaining, installmentCount, draft.installmentAmounts)
           const generatedPlan = buildPaymentSchedule({
             paidAmount: Math.min(declaredAmount, item.assignedAmount),
             remainingAmount: draftRemaining,
             firstDueDate: draft.firstDueDate,
             installmentCount,
             mode: draft.paymentMode,
+            installmentDates: draft.installmentDates,
+            installmentAmounts: draft.installmentAmounts,
           })
           const generatedRemark = draftRemaining > 0
             ? buildPaymentRemark(item, declaredAmount, generatedPlan, supplierPressure)
@@ -1380,16 +1395,48 @@ function CommercialRecovery({
                   </label>
                   <label>
                     Découpage du reste
-                    <select value={draft.installmentCount} onChange={(event) => onDraftChange(item.id, { installmentCount: event.target.value })}>
+                    <select value={draft.installmentCount} onChange={(event) => onDraftChange(item.id, {
+                      installmentCount: event.target.value,
+                      installmentDates: [],
+                      installmentAmounts: [],
+                    })}>
                       <option value="1">1 échéance</option>
                       <option value="2">2 échéances</option>
                       <option value="3">3 échéances</option>
                     </select>
                   </label>
-                  <label>
-                    Date première échéance
-                    <input type="date" value={draft.firstDueDate} onChange={(event) => onDraftChange(item.id, { firstDueDate: event.target.value })} />
-                  </label>
+                  <div className="installment-editor">
+                    <span>Détail des échéances</span>
+                    {generatedAmounts.map((suggestedAmount, index) => {
+                      const fallbackDate = addMonthsToDateInput(draft.firstDueDate, index)
+                      return (
+                        <fieldset key={`${item.id}-installment-${index}`}>
+                          <legend>Échéance {index + 1}</legend>
+                          <label>
+                            Date
+                            <input
+                              type="date"
+                              value={draft.installmentDates[index] || fallbackDate}
+                              onChange={(event) => onDraftChange(item.id, {
+                                firstDueDate: index === 0 ? event.target.value : draft.firstDueDate,
+                                installmentDates: replaceAt(draft.installmentDates, index, event.target.value),
+                              })}
+                            />
+                          </label>
+                          <label>
+                            Montant
+                            <input
+                              inputMode="numeric"
+                              value={draft.installmentAmounts[index] || String(suggestedAmount)}
+                              onChange={(event) => onDraftChange(item.id, {
+                                installmentAmounts: replaceAt(draft.installmentAmounts, index, event.target.value),
+                              })}
+                            />
+                          </label>
+                        </fieldset>
+                      )
+                    })}
+                  </div>
                   <label>
                     Mode prévu
                     <select value={draft.paymentMode} onChange={(event) => onDraftChange(item.id, { paymentMode: event.target.value as PaymentSchedule['mode'] })}>
@@ -2938,7 +2985,10 @@ function addMonthsToDateInput(value: string, months: number) {
   const [year, month, day] = value.split('-').map(Number)
   if (!year || !month || !day) return value
   const date = new Date(year, month - 1 + months, day)
-  return date.toISOString().slice(0, 10)
+  const nextYear = date.getFullYear()
+  const nextMonth = String(date.getMonth() + 1).padStart(2, '0')
+  const nextDay = String(date.getDate()).padStart(2, '0')
+  return `${nextYear}-${nextMonth}-${nextDay}`
 }
 
 function splitAmount(amount: number, count: number) {
@@ -2947,18 +2997,41 @@ function splitAmount(amount: number, count: number) {
   return Array.from({ length: count }, (_, index) => base + (index === count - 1 ? remainder : 0))
 }
 
+function parseAmountInput(value: string | undefined) {
+  return Number((value ?? '').replace(/[^\d]/g, '')) || 0
+}
+
+function replaceAt<T>(values: T[], index: number, value: T) {
+  const next = [...values]
+  next[index] = value
+  return next
+}
+
+function resolveInstallmentAmounts(amount: number, count: number, customAmounts?: string[]) {
+  if (amount <= 0) return []
+  const suggested = splitAmount(amount, count)
+  const amounts = suggested.map((value, index) => customAmounts?.[index] ? parseAmountInput(customAmounts[index]) : value)
+  const difference = amount - amounts.reduce((sum, value) => sum + value, 0)
+  amounts[count - 1] = Math.max(0, (amounts[count - 1] ?? 0) + difference)
+  return amounts
+}
+
 function buildPaymentSchedule({
   paidAmount,
   remainingAmount,
   firstDueDate,
   installmentCount,
   mode,
+  installmentDates,
+  installmentAmounts,
 }: {
   paidAmount: number
   remainingAmount: number
   firstDueDate: string
   installmentCount: number
   mode: PaymentSchedule['mode']
+  installmentDates?: string[]
+  installmentAmounts?: string[]
 }) {
   const paidLine: PaymentSchedule = {
     id: Date.now(),
@@ -2968,11 +3041,12 @@ function buildPaymentSchedule({
     status: 'Payé',
   }
   if (remainingAmount <= 0) return paidLine.amount > 0 ? [paidLine] : []
-  const futureLines = splitAmount(remainingAmount, installmentCount).map((amount, index) => ({
+  const amounts = resolveInstallmentAmounts(remainingAmount, installmentCount, installmentAmounts)
+  const futureLines = amounts.map((amount, index) => ({
     id: Date.now() + index + 1,
     mode,
     amount,
-    dueDate: formatDateInput(addMonthsToDateInput(firstDueDate, index)),
+    dueDate: formatDateInput(installmentDates?.[index] || addMonthsToDateInput(firstDueDate, index)),
     status: 'En attente' as const,
   }))
 

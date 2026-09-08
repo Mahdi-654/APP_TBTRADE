@@ -2277,6 +2277,39 @@ tbody tr:hover {
   min-height: 76px;
 }
 
+.installment-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.installment-editor > span {
+  grid-column: 1 / -1;
+  color: #60758d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.installment-editor fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #cfe0f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.installment-editor legend {
+  padding: 0 5px;
+  color: #2f75de;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
 .supplier-pressure,
 .auto-remark {
   padding: 11px 12px;
@@ -3893,6 +3926,7 @@ tbody tr:hover {
   .important-dates,
   .payment-plan-rail,
   .installment-breakdown,
+  .installment-editor,
   .dossier-modal-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -4083,6 +4117,7 @@ tbody tr:hover {
   .important-dates article,
   .payment-plan-rail,
   .installment-breakdown,
+  .installment-editor,
   .simple-task-header,
   .simple-task-kpis,
   .department-filter,
