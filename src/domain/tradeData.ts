@@ -107,6 +107,18 @@ export type PaymentSchedule = {
   status: 'En attente' | 'Déposé' | 'Payé' | 'À renégocier'
 }
 
+export type DirectionRecoveryNotice = {
+  id: number
+  dossierId: string
+  client: string
+  commercial: string
+  paidAmount: number
+  remainingAmount: number
+  installments: PaymentSchedule[]
+  message: string
+  sentAt: string
+}
+
 export type CollectionCase = {
   id: string
   client: string
@@ -121,6 +133,7 @@ export type CollectionCase = {
   paymentPlan: PaymentSchedule[]
   status: CollectionStatus
   observations: DgObservation[]
+  directionNotices?: DirectionRecoveryNotice[]
 }
 
 export type SupplierCommitment = {

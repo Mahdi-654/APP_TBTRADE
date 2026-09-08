@@ -93,6 +93,45 @@ import type {
 }
 from './domain/tradeData'
 
+type CollectionDraft = {
+  recoveredAmount: string
+  nextPromiseDate: string
+  clientComment: string
+  paymentAction: string
+  installmentCount: string
+  firstDueDate: string
+  installmentDates: string[]
+  installmentAmounts: string[]
+  paymentMode: PaymentSchedule['mode']
+  observation: string
+  requestedDate: string
+  urgency: DgObservation['urgency']
+}
+
+function createInitialCollectionDrafts() {
+  return Object.fromEntries(initialCollectionCases.map((item) => [
+    item.id,
+    {
+      recoveredAmount: String(item.recoveredAmount),
+      nextPromiseDate: item.nextPromiseDate,
+      clientComment: item.clientComment,
+      paymentAction: 'Reste à encaisser selon les échéances client.',
+      installmentCount: String(Math.max(1, Math.min(3, item.paymentPlan.filter((payment) => payment.status !== 'Payé').length || 1))),
+      firstDueDate: toDateInputValue(item.nextPromiseDate || item.currentDueDate),
+      installmentDates: item.paymentPlan
+        .filter((payment) => payment.status !== 'Payé')
+        .map((payment) => toDateInputValue(payment.dueDate)),
+      installmentAmounts: item.paymentPlan
+        .filter((payment) => payment.status !== 'Payé')
+        .map((payment) => String(payment.amount)),
+      paymentMode: item.paymentPlan.find((payment) => payment.status !== 'Payé')?.mode ?? 'Chèque',
+      observation: 'Négocier moins d’échéances et confirmer une date ferme.',
+      requestedDate: toDateInputValue(item.currentDueDate),
+      urgency: 'Urgent' as DgObservation['urgency'],
+    },
+  ])) as Record<string, CollectionDraft>
+}
+
 function App() {
   const [sessionUser, setSessionUser] = useState<UserAccount | null>(null)
   const [accounts, setAccounts] = useState<UserAccount[]>(initialUsers)
@@ -101,6 +140,8 @@ function App() {
   const [message, setMessage] = useState('Prêt à connecter la base de production dès réception du clone.')
   const [stocks, setStocks] = useState<StockRow[]>(initialStockRows)
   const [workflowCases, setWorkflowCases] = useState<WorkflowCase[]>(() => mergeAutomaticStockCases(initialWorkflowCases, initialStockRows, initialUsers))
+  const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialCollectionCases)
+  const [collectionDrafts, setCollectionDrafts] = useState(createInitialCollectionDrafts)
   const [departmentFocus, setDepartmentFocus] = useState<Role | 'all'>('all')
   const current = screens[active]
 
@@ -234,8 +275,8 @@ function App() {
         <section className="page" data-accent={current.color}>
           {active === 'dashboard' && <Dashboard onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} onOpenScreen={changeScreen} />}
           {active === 'fnr' && <FNR filters={filters} onFiltersChange={setFilters} onAction={setMessage} />}
-          {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
-          {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} />}
+          {active === 'encaissements' && <Cashflow type="encaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} collectionCases={collectionCases} setCollectionCases={setCollectionCases} collectionDrafts={collectionDrafts} setCollectionDrafts={setCollectionDrafts} />}
+          {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} collectionCases={collectionCases} setCollectionCases={setCollectionCases} collectionDrafts={collectionDrafts} setCollectionDrafts={setCollectionDrafts} />}
           {active === 'tresorerie' && <Tresorerie onAction={setMessage} />}
           {active === 'stocks' && <Stocks filters={filters} onFiltersChange={setFilters} onAction={setMessage} stocks={stocks} workflowCases={workflowCases} user={sessionUser} onCreateStockAlert={createStockAlert} onThresholdChange={updateStockThreshold} onOpenApproWorkflow={openApproWorkflow} />}
           {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} />}
@@ -917,40 +958,24 @@ function Cashflow({
   onFiltersChange,
   onAction,
   user,
+  collectionCases,
+  setCollectionCases,
+  collectionDrafts,
+  setCollectionDrafts,
 }: {
   type: 'encaissements' | 'decaissements'
   filters: FilterState
   onFiltersChange: (filters: FilterState) => void
   onAction: (message: string) => void
   user: UserAccount
+  collectionCases: CollectionCase[]
+  setCollectionCases: (cases: CollectionCase[]) => void
+  collectionDrafts: Record<string, CollectionDraft>
+  setCollectionDrafts: (drafts: Record<string, CollectionDraft>) => void
 }) {
   const isIncome = type === 'encaissements'
   const sourceRows: Array<Record<string, ReactNode>> = isIncome ? encaissements : decaissements
   const rows = useFilteredRows(sourceRows, filters)
-  const [collectionCases, setCollectionCases] = useState(initialCollectionCases)
-  const [collectionDrafts, setCollectionDrafts] = useState(() =>
-    Object.fromEntries(initialCollectionCases.map((item) => [
-      item.id,
-      {
-        recoveredAmount: String(item.recoveredAmount),
-        nextPromiseDate: item.nextPromiseDate,
-        clientComment: item.clientComment,
-        paymentAction: 'Reste à encaisser selon les échéances client.',
-        installmentCount: String(Math.max(1, Math.min(3, item.paymentPlan.filter((payment) => payment.status !== 'Payé').length || 1))),
-        firstDueDate: toDateInputValue(item.nextPromiseDate || item.currentDueDate),
-        installmentDates: item.paymentPlan
-          .filter((payment) => payment.status !== 'Payé')
-          .map((payment) => toDateInputValue(payment.dueDate)),
-        installmentAmounts: item.paymentPlan
-          .filter((payment) => payment.status !== 'Payé')
-          .map((payment) => String(payment.amount)),
-        paymentMode: item.paymentPlan.find((payment) => payment.status !== 'Payé')?.mode ?? 'Chèque',
-        observation: 'Négocier moins d’échéances et confirmer une date ferme.',
-        requestedDate: toDateInputValue(item.currentDueDate),
-        urgency: 'Urgent' as DgObservation['urgency'],
-      },
-    ])),
-  )
   const filteredCollectionCases = useMemo(() => {
     const query = filters.query.trim().toLowerCase()
     return collectionCases.filter((item) => {
@@ -1001,6 +1026,9 @@ function Cashflow({
     const generatedComment = remaining > 0
       ? buildPaymentRemark(target, amount, plannedPayments, supplierPressure)
       : `Paiement complet de ${formatNumber(Math.min(amount, target.assignedAmount))} TND reçu. Dossier recouvrement clôturé.`
+    const directionNotice = remaining > 0
+      ? buildDirectionRecoveryNotice(target, Math.min(amount, target.assignedAmount), remaining, plannedPayments, generatedComment)
+      : null
     setCollectionCases(collectionCases.map((item) => item.id === id
       ? {
           ...item,
@@ -1012,11 +1040,12 @@ function Cashflow({
             : plannedPayments,
           status: remaining === 0 ? 'Recouvré' : 'Promesse client',
           observations: item.observations.map((observation) => observation.status === 'Non lue' ? { ...observation, status: 'Lue' as const } : observation),
+          directionNotices: directionNotice ? [directionNotice, ...(item.directionNotices ?? [])] : item.directionNotices,
         }
       : item))
     onAction(remaining === 0
       ? `Recouvrement clôturé pour ${target.client}.`
-      : `Notification direction envoyée: ${target.client}, reste ${formatNumber(remaining)} TND découpé en ${installmentCount} échéance(s). Plan commercial verrouillé.`)
+      : `Notification DG envoyée: dossier ${target.id}, client ${target.client}, commercial ${target.commercial}, reste ${formatNumber(remaining)} TND avec ${formatInstallmentList(plannedPayments)}.`)
   }
 
   const sendDgObservation = (id: string) => {
@@ -1323,6 +1352,7 @@ function CommercialRecovery({
           const remainingTotal = Math.max(0, item.totalDue - item.recoveredAmount)
           const draft = drafts[item.id]
           const latestObservation = item.observations.at(-1)
+          const latestDirectionNotice = item.directionNotices?.[0]
           const declaredAmount = Number(draft.recoveredAmount.replace(/[^\d]/g, '')) || 0
           const draftRemaining = Math.max(0, item.assignedAmount - declaredAmount)
           const installmentCount = getInstallmentCount(draft.installmentCount)
@@ -1364,6 +1394,20 @@ function CommercialRecovery({
                 </span>
               </div>
               <PaymentPlanRail payments={item.paymentPlan} />
+              {canObserve && latestDirectionNotice && (
+                <div className="direction-recovery-notice">
+                  <Bell size={16} />
+                  <span>
+                    <strong>Notification recouvrement reçue - {latestDirectionNotice.dossierId}</strong>
+                    <small>
+                      Client: {latestDirectionNotice.client} - Commercial: {latestDirectionNotice.commercial} - Reçu: {formatNumber(latestDirectionNotice.paidAmount)} TND - Reste: {formatNumber(latestDirectionNotice.remainingAmount)} TND
+                    </small>
+                    <InstallmentBreakdown payments={latestDirectionNotice.installments} />
+                    <em>{latestDirectionNotice.message}</em>
+                    <small>Envoyée à la Direction le {latestDirectionNotice.sentAt}. Plan commercial verrouillé pour ce dossier.</small>
+                  </span>
+                </div>
+              )}
               <p className="muted">{item.clientComment}</p>
               {draftRemaining > 0 && (
                 <div className="supplier-pressure">
@@ -3079,6 +3123,40 @@ function buildPaymentRemark(
   const futurePlan = plan.filter((payment) => payment.status !== 'Payé')
   const planText = futurePlan.map((payment, index) => `E${index + 1}: ${formatNumber(payment.amount)} TND le ${payment.dueDate}`).join(' | ')
   return `Paiement client détecté: ${formatNumber(Math.min(paidAmount, item.assignedAmount))} TND sur ${formatNumber(item.assignedAmount)} TND. Reste automatique: ${formatNumber(remaining)} TND. Plan commercial verrouillé: ${planText}. ${supplierPressure.label}; recommandation: encaisser le reste en ${supplierPressure.recommendedInstallments} échéance(s).`
+}
+
+function formatInstallmentList(plan: PaymentSchedule[]) {
+  return plan
+    .filter((payment) => payment.status !== 'Payé')
+    .map((payment, index) => `E${index + 1} ${formatNumber(payment.amount)} TND le ${payment.dueDate}`)
+    .join(', ')
+}
+
+function buildDirectionRecoveryNotice(
+  item: CollectionCase,
+  paidAmount: number,
+  remainingAmount: number,
+  plan: PaymentSchedule[],
+  message: string,
+) {
+  const installments = plan.filter((payment) => payment.status !== 'Payé')
+  return {
+    id: Date.now() + 99,
+    dossierId: item.id,
+    client: item.client,
+    commercial: item.commercial,
+    paidAmount,
+    remainingAmount,
+    installments,
+    message,
+    sentAt: new Date().toLocaleString('fr-FR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+  }
 }
 
 function RowActions({ label, onAction }: { label: string; onAction: (message: string) => void }) {

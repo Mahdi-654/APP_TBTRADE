@@ -2311,6 +2311,7 @@ tbody tr:hover {
 }
 
 .supplier-pressure,
+.direction-recovery-notice,
 .auto-remark {
   padding: 11px 12px;
   border-radius: 8px;
@@ -2338,6 +2339,43 @@ tbody tr:hover {
   margin-bottom: 3px;
   color: #102033;
   font-size: 12px;
+}
+
+.direction-recovery-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #b8d7ff;
+  background:
+    linear-gradient(135deg, rgba(47, 117, 222, 0.08), rgba(16, 166, 108, 0.08)),
+    #f7fbff;
+  color: #1b2c40;
+}
+
+.direction-recovery-notice > svg {
+  flex: 0 0 auto;
+  color: #2f75de;
+  margin-top: 2px;
+}
+
+.direction-recovery-notice > span {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.direction-recovery-notice strong {
+  color: #102033;
+  font-size: 12px;
+}
+
+.direction-recovery-notice small,
+.direction-recovery-notice em {
+  color: #405874;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1.45;
 }
 
 .auto-remark {
