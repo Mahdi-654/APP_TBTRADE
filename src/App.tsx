@@ -64,7 +64,6 @@ import {
   navItems,
   priorityRank,
   reports,
-  roleCapabilities,
   roleHome,
   roleLabels,
   rolePermissions,
@@ -563,8 +562,6 @@ function Dashboard({
         onOpenScreen={onOpenScreen}
         onOpenDepartment={onOpenDepartment}
       />
-      <WorkflowPurpose user={user} onOpenScreen={onOpenScreen} />
-      <ErpReadiness onOpenScreen={onOpenScreen} />
       <DashboardEssentials
         user={user}
         visibleCases={visibleCases}
@@ -574,125 +571,6 @@ function Dashboard({
         onAction={onAction}
       />
     </>
-  )
-}
-
-function WorkflowPurpose({
-  user,
-  onOpenScreen,
-}: {
-  user: UserAccount
-  onOpenScreen: (screen: ScreenKey) => void
-}) {
-  const steps = [
-    {
-      icon: ClipboardList,
-      title: '1. Créer ou recevoir un dossier',
-      detail: user.role === 'dg'
-        ? 'La DG attribue une demande au département responsable.'
-        : 'Votre service reçoit uniquement les dossiers qui le concernent.',
-      screen: 'taches' as const,
-    },
-    {
-      icon: MessageSquareText,
-      title: '2. Répondre avec un engagement',
-      detail: 'Chaque action garde une trace: réponse, délai promis, blocage ou preuve envoyée.',
-      screen: 'taches' as const,
-    },
-    {
-      icon: CheckCircle2,
-      title: '3. Retour DG puis clôture',
-      detail: 'La DG transfère au prochain service ou clôture quand la décision est terminée.',
-      screen: user.role === 'dg' ? 'dashboard' as const : roleHome[user.role],
-    },
-  ]
-
-  return (
-    <section className="workflow-purpose" aria-label="Sens du workflow TBTrade">
-      <div className="purpose-copy">
-        <span className="eyebrow">Sens de la plateforme</span>
-        <h2>Un seul circuit pour éviter les dossiers perdus.</h2>
-        <p>TBTrade réunit les factures, les encaissements, les paiements, les stocks et les tâches dans un workflow lisible: priorité, responsable, prochaine action.</p>
-      </div>
-      <div className="purpose-steps">
-        {steps.map((step) => {
-          const Icon = step.icon
-          return (
-            <button key={step.title} type="button" onClick={() => onOpenScreen(step.screen)}>
-              <Icon size={18} />
-              <span>
-                <strong>{step.title}</strong>
-                <small>{step.detail}</small>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function ErpReadiness({ onOpenScreen }: { onOpenScreen: (screen: ScreenKey) => void }) {
-  const modules = [
-    ['Commercial', 'Clients, ventes, factures, commerciaux et activités de recouvrement.', Users],
-    ['Finance', 'Trésorerie, encaissements prévus, paiements fournisseurs et instruments à échéance.', Banknote],
-    ['Comptabilité', 'Lettrage, pièces comptables, factures et rapprochements.', FileSpreadsheet],
-    ['FNR', 'Factures Non Réglées, soldes clients et actions commerciales associées.', ReceiptText],
-  ] as const
-  const checks = [
-    'Lecture des dossiers clients, fournisseurs, factures et règlements depuis Sage 100',
-    'Contrôle des soldes, échéances, retards et pièces sans double saisie',
-    'Recommandations DG sur recouvrement, paiement fournisseur et rupture stock',
-  ]
-  const phases = [
-    'Analyse des besoins',
-    'Architecture et modèle de données',
-    'Modules ERP métier',
-    'Notifications et workflows',
-    'Connexion .env aux sources',
-    'Intégration Sage 100',
-    'Tests et validation',
-    'Déploiement Render',
-    'Maintenance continue',
-  ]
-
-  return (
-    <section className="erp-readiness" aria-label="Architecture ERP configurable">
-      <div className="erp-readiness-copy">
-        <span className="eyebrow">Consultation ERP Sage 100</span>
-        <h2>Un cockpit de dossiers pour consulter, décider et relancer.</h2>
-        <p>La version actuelle fonctionne avec des données de démonstration structurées comme les dossiers Sage 100. La connexion production sera pilotée par variables `.env` afin de brancher Sage 100, SQL ou une API passerelle sans réécrire l’interface.</p>
-        <div className="erp-status-row">
-          <Status value="Sage 100 prévu" />
-          <Status value="Lecture ERP" />
-          <Status value="Render ready" />
-        </div>
-        <div className="erp-checklist">
-          {checks.map((check) => (
-            <span key={check}><CheckCircle2 size={14} /> {check}</span>
-          ))}
-        </div>
-      </div>
-      <div className="erp-module-grid">
-        {modules.map(([title, detail, Icon]) => (
-          <button key={title} type="button" onClick={() => onOpenScreen(title === 'FNR' ? 'fnr' : title === 'Finance' ? 'tresorerie' : title === 'Commercial' ? 'encaissements' : 'decaissements')}>
-            <Icon size={17} />
-            <span>
-              <strong>{title}</strong>
-              <small>{detail}</small>
-            </span>
-          </button>
-        ))}
-      </div>
-      <div className="erp-phase-rail">
-        {phases.map((phase, index) => (
-          <span className={index < 4 ? 'active' : index === 4 ? 'next' : ''} key={phase}>
-            <b>{index + 1}</b>
-            {phase}
-          </span>
-        ))}
-      </div>
-    </section>
   )
 }
 
@@ -730,7 +608,6 @@ function RoleWorkbench({
       <div className="workbench-main">
         <span className="eyebrow">Espace {roleLabels[user.role]}</span>
         <h2>{nextCase ? getNextActionLabel(nextCase, user) : 'Tout est calme pour cette session.'}</h2>
-        <p>{roleCapabilities[user.role]}</p>
         <div className="workbench-actions">
           <button className="primary-action large" type="button" onClick={() => onOpenScreen('taches')}>
             <ClipboardCheck size={16} />
@@ -756,7 +633,7 @@ function RoleWorkbench({
         ) : (
           <>
             <strong>Aucune urgence</strong>
-            <small>Les modules restent disponibles dans les raccourcis.</small>
+            <small>Pas de dossier urgent.</small>
             <Status value="Flux normal" />
           </>
         )}
@@ -764,7 +641,7 @@ function RoleWorkbench({
       <div className="workbench-kpis">
         <article>
           <ClipboardList size={17} />
-          <span>{user.role === 'dg' ? 'Dossiers actifs' : 'Mes actions'}</span>
+          <span>Dossiers</span>
           <strong>{pendingForRole}</strong>
         </article>
         <article>
@@ -841,7 +718,7 @@ function DashboardEssentials({
           {importantCases.length === 0 && <p className="muted">Aucun dossier actif à traiter.</p>}
         </div>
       </Panel>
-      <Panel title="Alertes et blocages">
+      <Panel title="Alertes">
         <div className="simple-alerts">
           {blockedCases.slice(0, 2).map((item) => (
             <article key={item.id}>
@@ -2142,11 +2019,10 @@ function Taches({
     <>
       <ModuleHeader
         eyebrow="Module dossiers"
-        title="Boîtes par département et décision DG"
-        description="Chaque opération devient un dossier: la DG distribue, le département décide et traite, puis le dossier revient verrouillé à la DG."
+        title="Dossiers"
+        description="Ouvrir le dossier, répondre, transférer ou clôturer."
       />
       <SimpleTaskHeader cases={workflowCases} user={user} notifications={inboxItems.length} />
-      <BusinessFlowGuide />
       {user.role === 'dg' && (
         <DepartmentFilter cases={workflowCases} active={departmentFocus} onChange={(role) => {
           onDepartmentFocusChange(role)
@@ -2154,7 +2030,6 @@ function Taches({
           onAction(role === 'all' ? 'Tous les départements affichés.' : `Dossiers ${roleLabels[role]} affichés.`)
         }} />
       )}
-      <ImportantDossierDates cases={visibleCases} />
       {user.role === 'dg' && (
         <Panel title="Attribuer une tâche DG">
           <form className="task-assignment" onSubmit={createTask}>
@@ -2228,145 +2103,14 @@ function SimpleTaskHeader({ cases, user, notifications }: { cases: WorkflowCase[
   return (
     <section className="simple-task-header">
       <div>
-        <span className="eyebrow">Dossiers par département</span>
-        <h2>{user.role === 'dg' ? 'Choisir un dossier, puis le transférer au bon département.' : `Dossiers affectés à ${roleLabels[user.role]}.`}</h2>
-        <p>Chaque colonne représente le responsable actuel. Le bouton Ouvrir affiche la fiche complète, les messages et la décision suivante.</p>
+        <span className="eyebrow">Flux simple</span>
+        <h2>{user.role === 'dg' ? 'Dossier à suivre' : `Dossier ${roleLabels[user.role]}`}</h2>
+        <p>Ouvrir, traiter, puis retourner à la DG.</p>
       </div>
       <div className="simple-task-kpis">
         <article><strong>{current.length}</strong><span>Dossiers visibles</span></article>
         <article><strong>{blocked.length}</strong><span>Blocages</span></article>
         <article><strong>{notifications}</strong><span>Messages</span></article>
-      </div>
-    </section>
-  )
-}
-
-function ImportantDossierDates({ cases }: { cases: WorkflowCase[] }) {
-  const important = [...cases]
-    .filter((item) => item.status !== 'Terminé')
-    .sort(compareCasesByPriorityAndDate)
-    .slice(0, 5)
-
-  return (
-    <section className="important-dates">
-      <div>
-        <span className="eyebrow">Dates dossiers</span>
-        <strong>Priorités à surveiller</strong>
-      </div>
-      {important.map((item) => (
-        <article key={`date-${item.id}`}>
-          <CalendarDays size={15} />
-          <span>
-            <b>{formatDossierDate(item)}</b>
-            {item.id} - {roleLabels[item.currentRole]}
-          </span>
-          <Status value={item.priority} />
-        </article>
-      ))}
-      {important.length === 0 && <p className="muted">Aucune date urgente.</p>}
-    </section>
-  )
-}
-
-function BusinessFlowGuide() {
-  const rules = [
-    {
-      icon: LockKeyhole,
-      title: 'Dossier verrouillé après traitement',
-      detail: 'Quand un département clique sur Dossier traité, son travail est marqué effectué et ne peut plus être modifié.',
-      status: 'Verrou DG',
-    },
-    {
-      icon: ShieldAlert,
-      title: 'Réouverture uniquement Direction',
-      detail: 'La DG peut rouvrir le même dossier au même département pour complément, avec une trace claire dans l’historique.',
-      status: 'Audit',
-    },
-    {
-      icon: Workflow,
-      title: 'Une opération = un dossier',
-      detail: 'Commande, facture, paiement fournisseur, règlement client ou FNR suivent le même fil de décision interservices.',
-      status: 'Flux unique',
-    },
-    {
-      icon: MessageSquareText,
-      title: 'Communication simple',
-      detail: 'Chaque décision, observation DG, réponse service et preuve fournisseur reste dans le même dossier.',
-      status: 'Messages',
-    },
-  ] as const
-
-  const departmentRules = [
-    {
-      from: 'DG',
-      to: 'Tous',
-      title: 'Distribution des tâches',
-      detail: 'La Direction attribue le dossier, pose des observations et décide du prochain département sans écraser la décision métier.',
-      proof: 'Ordre DG + historique',
-    },
-    {
-      from: 'Commercial',
-      to: 'Finance / Compta',
-      title: 'FNR et factures clients',
-      detail: 'Le commercial renseigne le recouvrement client. Finance contrôle l’impact trésorerie et Compta rapproche les factures.',
-      proof: 'Plan recouvrement + facture client',
-    },
-    {
-      from: 'Appro',
-      to: 'Finance',
-      title: 'Commande fournisseur',
-      detail: 'L’Appro passe la commande seulement avec besoin justifié, fournisseur identifié et preuve de passation.',
-      proof: 'Bon de commande / preuve FRS',
-    },
-    {
-      from: 'Finance',
-      to: 'Appro / Commercial',
-      title: 'Arbitrage trésorerie',
-      detail: 'Finance rapproche les paiements fournisseurs avec les encaissements attendus et peut demander accélération client.',
-      proof: 'Échéancier + situation bancaire',
-    },
-    {
-      from: 'Compta',
-      to: 'Finance',
-      title: 'Rapprochement règlement',
-      detail: 'Compta vérifie facture, règlement, lettrage et pièces justificatives avant décision financière finale.',
-      proof: 'Facture + lettrage',
-    },
-  ] as const
-
-  return (
-    <section className="business-flow-guide">
-      <div className="flow-guide-header">
-        <div>
-          <span className="eyebrow">Logique consultative entreprise</span>
-          <h2>Des dossiers verrouillés, traçables et reliés entre tous les départements.</h2>
-          <p>La DG distribue les tâches et observe. Les départements prennent leur décision métier, terminent leur travail, puis le dossier revient à la DG pour transfert, clôture ou réouverture contrôlée.</p>
-        </div>
-        <Status value="Production workflow" />
-      </div>
-      <div className="flow-rule-grid">
-        {rules.map(({ icon: Icon, title, detail, status }) => (
-          <article key={title}>
-            <span className="flow-rule-icon"><Icon size={17} /></span>
-            <strong>{title}</strong>
-            <p>{detail}</p>
-            <Status value={status} />
-          </article>
-        ))}
-      </div>
-      <div className="department-logic-grid">
-        {departmentRules.map((rule) => (
-          <article key={rule.title}>
-            <div className="department-route">
-              <span>{rule.from}</span>
-              <ChevronRight size={14} />
-              <span>{rule.to}</span>
-            </div>
-            <strong>{rule.title}</strong>
-            <p>{rule.detail}</p>
-            <small>Preuve attendue: {rule.proof}</small>
-          </article>
-        ))}
       </div>
     </section>
   )
