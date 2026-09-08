@@ -936,10 +936,9 @@ function Cashflow({
         nextPromiseDate: item.nextPromiseDate,
         clientComment: item.clientComment,
         paymentAction: 'Reste à encaisser selon les échéances client.',
-        scheduleText: item.paymentPlan
-          .filter((payment) => payment.status !== 'Payé')
-          .map((payment) => `${payment.mode}; ${payment.amount}; ${payment.dueDate}`)
-          .join('\n'),
+        installmentCount: String(Math.max(1, Math.min(3, item.paymentPlan.filter((payment) => payment.status !== 'Payé').length || 1))),
+        firstDueDate: toDateInputValue(item.nextPromiseDate || item.currentDueDate),
+        paymentMode: item.paymentPlan.find((payment) => payment.status !== 'Payé')?.mode ?? 'Chèque',
         observation: 'Négocier moins d’échéances et confirmer une date ferme.',
         requestedDate: toDateInputValue(item.currentDueDate),
         urgency: 'Urgent' as DgObservation['urgency'],
@@ -978,17 +977,28 @@ function Cashflow({
     const target = collectionCases.find((item) => item.id === id)
     if (!target) return
     const remaining = Math.max(0, target.assignedAmount - amount)
-    if (remaining > 0 && (!draft.scheduleText.trim() || !draft.clientComment.trim() || !draft.paymentAction.trim())) {
-      onAction('Recouvrement partiel: le commercial doit préciser les échéances restantes, l’action prévue et le commentaire client.')
+    if (remaining > 0 && !draft.firstDueDate) {
+      onAction('Recouvrement partiel: choisissez une date au calendrier pour générer automatiquement les échéances restantes.')
       return
     }
-    const plannedPayments = parsePaymentSchedule(draft.scheduleText, amount)
+    const supplierPressure = getSupplierPaymentPressure(supplierCommitments)
+    const installmentCount = getInstallmentCount(draft.installmentCount, supplierPressure.recommendedInstallments)
+    const plannedPayments = buildPaymentSchedule({
+      paidAmount: Math.min(amount, target.assignedAmount),
+      remainingAmount: remaining,
+      firstDueDate: draft.firstDueDate,
+      installmentCount,
+      mode: draft.paymentMode,
+    })
+    const generatedComment = remaining > 0
+      ? buildPaymentRemark(target, amount, plannedPayments, supplierPressure)
+      : `Paiement complet de ${formatNumber(Math.min(amount, target.assignedAmount))} TND reçu. Dossier recouvrement clôturé.`
     setCollectionCases(collectionCases.map((item) => item.id === id
       ? {
           ...item,
           recoveredAmount: Math.min(amount, item.assignedAmount),
-          nextPromiseDate: remaining > 0 ? draft.nextPromiseDate : '',
-          clientComment: remaining > 0 ? `${draft.clientComment} Action commercial: ${draft.paymentAction}` : draft.clientComment,
+          nextPromiseDate: remaining > 0 ? formatDateInput(draft.firstDueDate) : '',
+          clientComment: generatedComment,
           paymentPlan: remaining === 0
             ? [{ id: Date.now(), mode: 'Espèces', amount: Math.min(amount, item.assignedAmount), dueDate: 'Aujourd’hui', status: 'Payé' as const }]
             : plannedPayments,
@@ -998,7 +1008,7 @@ function Cashflow({
       : item))
     onAction(remaining === 0
       ? `Recouvrement clôturé pour ${target.client}.`
-      : `Recouvrement partiel enregistré pour ${target.client}: reste ${formatNumber(remaining)} TND, prochaine promesse ${draft.nextPromiseDate}.`)
+      : `Notification direction envoyée: ${target.client}, reste ${formatNumber(remaining)} TND découpé en ${installmentCount} échéance(s). Plan commercial verrouillé.`)
   }
 
   const sendDgObservation = (id: string) => {
@@ -1077,6 +1087,7 @@ function Cashflow({
             onDraftChange={updateDraft}
             onSaveRecovery={saveRecovery}
             onSendObservation={sendDgObservation}
+            supplierCommitments={supplierCommitments}
           />
         </>
       )}
@@ -1226,6 +1237,7 @@ function CommercialRecovery({
   onDraftChange,
   onSaveRecovery,
   onSendObservation,
+  supplierCommitments,
 }: {
   cases: CollectionCase[]
   totals: { totalDue: number; assigned: number; recovered: number; remaining: number }
@@ -1234,7 +1246,9 @@ function CommercialRecovery({
     nextPromiseDate: string
     clientComment: string
     paymentAction: string
-    scheduleText: string
+    installmentCount: string
+    firstDueDate: string
+    paymentMode: PaymentSchedule['mode']
     observation: string
     requestedDate: string
     urgency: DgObservation['urgency']
@@ -1245,16 +1259,20 @@ function CommercialRecovery({
     nextPromiseDate: string
     clientComment: string
     paymentAction: string
-    scheduleText: string
+    installmentCount: string
+    firstDueDate: string
+    paymentMode: PaymentSchedule['mode']
     observation: string
     requestedDate: string
     urgency: DgObservation['urgency']
   }>) => void
   onSaveRecovery: (id: string) => void
   onSendObservation: (id: string) => void
+  supplierCommitments: SupplierCommitment[]
 }) {
-  const canDeclareRecovery = user.role === 'commercial' || user.role === 'dg'
+  const canDeclareRecovery = user.role === 'commercial'
   const canObserve = user.role === 'dg'
+  const supplierPressure = getSupplierPaymentPressure(supplierCommitments)
 
   return (
     <section className="recovery-section">
@@ -1293,6 +1311,19 @@ function CommercialRecovery({
           const remainingTotal = Math.max(0, item.totalDue - item.recoveredAmount)
           const draft = drafts[item.id]
           const latestObservation = item.observations.at(-1)
+          const declaredAmount = Number(draft.recoveredAmount.replace(/[^\d]/g, '')) || 0
+          const draftRemaining = Math.max(0, item.assignedAmount - declaredAmount)
+          const installmentCount = getInstallmentCount(draft.installmentCount, supplierPressure.recommendedInstallments)
+          const generatedPlan = buildPaymentSchedule({
+            paidAmount: Math.min(declaredAmount, item.assignedAmount),
+            remainingAmount: draftRemaining,
+            firstDueDate: draft.firstDueDate,
+            installmentCount,
+            mode: draft.paymentMode,
+          })
+          const generatedRemark = draftRemaining > 0
+            ? buildPaymentRemark(item, declaredAmount, generatedPlan, supplierPressure)
+            : `Paiement complet de ${formatNumber(Math.min(declaredAmount, item.assignedAmount))} TND reçu. Dossier recouvrement clôturé.`
 
           return (
             <article className="recovery-card" key={item.id}>
@@ -1319,6 +1350,15 @@ function CommercialRecovery({
               </div>
               <PaymentPlanRail payments={item.paymentPlan} />
               <p className="muted">{item.clientComment}</p>
+              {draftRemaining > 0 && (
+                <div className="supplier-pressure">
+                  <Siren size={16} />
+                  <span>
+                    <strong>{supplierPressure.label}</strong>
+                    Engagement FRS: {formatNumber(supplierPressure.amount)} TND. Découpage conseillé: {supplierPressure.recommendedInstallments} échéance(s) pour sécuriser la trésorerie.
+                  </span>
+                </div>
+              )}
               {latestObservation && (
                 <div className="dg-observation">
                   <MessageSquareText size={15} />
@@ -1339,24 +1379,35 @@ function CommercialRecovery({
                     <input value={draft.recoveredAmount} onChange={(event) => onDraftChange(item.id, { recoveredAmount: event.target.value })} />
                   </label>
                   <label>
-                    Prochaine date
-                    <input value={draft.nextPromiseDate} onChange={(event) => onDraftChange(item.id, { nextPromiseDate: event.target.value })} />
+                    Découpage du reste
+                    <select value={draft.installmentCount} onChange={(event) => onDraftChange(item.id, { installmentCount: event.target.value })}>
+                      <option value="1">1 échéance</option>
+                      <option value="2">2 échéances</option>
+                      <option value="3">3 échéances</option>
+                    </select>
                   </label>
                   <label>
-                    Action sur le reste
-                    <input value={draft.paymentAction} onChange={(event) => onDraftChange(item.id, { paymentAction: event.target.value })} />
+                    Date première échéance
+                    <input type="date" value={draft.firstDueDate} onChange={(event) => onDraftChange(item.id, { firstDueDate: event.target.value })} />
                   </label>
                   <label>
-                    Échéances restantes
-                    <textarea value={draft.scheduleText} onChange={(event) => onDraftChange(item.id, { scheduleText: event.target.value })} />
+                    Mode prévu
+                    <select value={draft.paymentMode} onChange={(event) => onDraftChange(item.id, { paymentMode: event.target.value as PaymentSchedule['mode'] })}>
+                      <option>Chèque</option>
+                      <option>Traite</option>
+                      <option>Virement</option>
+                      <option>Espèces</option>
+                    </select>
                   </label>
-                  <label>
-                    Commentaire client
-                    <textarea value={draft.clientComment} onChange={(event) => onDraftChange(item.id, { clientComment: event.target.value })} />
-                  </label>
+                  <div className="auto-remark">
+                    <span>Remarque générée sans saisie manuelle</span>
+                    <strong>Reste détecté: {formatNumber(draftRemaining)} TND</strong>
+                    <PaymentPlanRail payments={generatedPlan} compact />
+                    <p>{generatedRemark}</p>
+                  </div>
                   <button className="primary-action" type="submit">
                     <ClipboardCheck size={15} />
-                    Déclarer
+                    Notifier direction
                   </button>
                 </form>
               )}
@@ -1392,9 +1443,9 @@ function CommercialRecovery({
   )
 }
 
-function PaymentPlanRail({ payments }: { payments: PaymentSchedule[] }) {
+function PaymentPlanRail({ payments, compact }: { payments: PaymentSchedule[]; compact?: boolean }) {
   return (
-    <div className="payment-plan-rail">
+    <div className={`payment-plan-rail ${compact ? 'compact' : ''}`}>
       {payments.map((payment) => (
         <article className={payment.status === 'Payé' ? 'paid' : payment.status === 'À renégocier' ? 'warning' : ''} key={payment.id}>
           <span>{payment.dueDate}</span>
@@ -2847,30 +2898,89 @@ function getCollectionRemaining(item: CollectionCase) {
   return Math.max(0, item.assignedAmount - item.recoveredAmount)
 }
 
-function parsePaymentSchedule(value: string, paidAmount: number): PaymentSchedule[] {
+function getInstallmentCount(value: string, recommendedMaximum = 3) {
+  const parsed = Number(value) || 1
+  return Math.max(1, Math.min(3, Math.min(parsed, recommendedMaximum)))
+}
+
+function formatDateInput(value: string) {
+  if (!value) return 'À préciser'
+  const [year, month, day] = value.split('-')
+  if (!year || !month || !day) return value
+  return `${day}/${month}/${year}`
+}
+
+function addMonthsToDateInput(value: string, months: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return value
+  const date = new Date(year, month - 1 + months, day)
+  return date.toISOString().slice(0, 10)
+}
+
+function splitAmount(amount: number, count: number) {
+  const base = Math.floor(amount / count)
+  const remainder = amount - base * count
+  return Array.from({ length: count }, (_, index) => base + (index === count - 1 ? remainder : 0))
+}
+
+function buildPaymentSchedule({
+  paidAmount,
+  remainingAmount,
+  firstDueDate,
+  installmentCount,
+  mode,
+}: {
+  paidAmount: number
+  remainingAmount: number
+  firstDueDate: string
+  installmentCount: number
+  mode: PaymentSchedule['mode']
+}) {
   const paidLine: PaymentSchedule = {
     id: Date.now(),
     mode: 'Espèces',
-    amount: paidAmount,
+    amount: Math.max(0, paidAmount),
     dueDate: 'Aujourd’hui',
     status: 'Payé',
   }
-  const futureLines = value
-    .split('\n')
-    .map((line, index) => {
-      const [modeRaw = 'Chèque', amountRaw = '0', dueDateRaw = 'À préciser'] = line.split(';').map((part) => part.trim())
-      const mode = ['Espèces', 'Chèque', 'Traite', 'Virement'].includes(modeRaw) ? modeRaw as PaymentSchedule['mode'] : 'Chèque'
-      return {
-        id: Date.now() + index + 1,
-        mode,
-        amount: Number(amountRaw.replace(/[^\d]/g, '')) || 0,
-        dueDate: dueDateRaw,
-        status: 'En attente' as const,
-      }
-    })
-    .filter((payment) => payment.amount > 0)
+  if (remainingAmount <= 0) return paidLine.amount > 0 ? [paidLine] : []
+  const futureLines = splitAmount(remainingAmount, installmentCount).map((amount, index) => ({
+    id: Date.now() + index + 1,
+    mode,
+    amount,
+    dueDate: formatDateInput(addMonthsToDateInput(firstDueDate, index)),
+    status: 'En attente' as const,
+  }))
 
-  return [paidLine, ...futureLines]
+  return paidLine.amount > 0 ? [paidLine, ...futureLines] : futureLines
+}
+
+function getSupplierPaymentPressure(commitments: SupplierCommitment[]) {
+  const openCommitments = commitments
+    .map((item) => ({ ...item, remaining: Math.max(0, item.amount - item.paidAmount) }))
+    .filter((item) => item.remaining > 0)
+    .sort((a, b) => b.remaining - a.remaining)
+  const urgent = openCommitments.find((item) => item.approDecision === 'Commande bloquée') ?? openCommitments[0]
+  if (!urgent) {
+    return { label: 'Aucun paiement FRS urgent', amount: 0, recommendedInstallments: 3 }
+  }
+  return {
+    label: urgent.approDecision === 'Commande bloquée' ? `Paiement FRS urgent: ${urgent.supplier}` : `Paiement FRS à surveiller: ${urgent.supplier}`,
+    amount: urgent.remaining,
+    recommendedInstallments: urgent.remaining >= 2000 ? 1 : 2,
+  }
+}
+
+function buildPaymentRemark(
+  item: CollectionCase,
+  paidAmount: number,
+  plan: PaymentSchedule[],
+  supplierPressure: ReturnType<typeof getSupplierPaymentPressure>,
+) {
+  const remaining = Math.max(0, item.assignedAmount - Math.min(paidAmount, item.assignedAmount))
+  const futurePlan = plan.filter((payment) => payment.status !== 'Payé')
+  const planText = futurePlan.map((payment, index) => `E${index + 1}: ${formatNumber(payment.amount)} TND le ${payment.dueDate}`).join(' | ')
+  return `Paiement client détecté: ${formatNumber(Math.min(paidAmount, item.assignedAmount))} TND sur ${formatNumber(item.assignedAmount)} TND. Reste automatique: ${formatNumber(remaining)} TND. Plan commercial verrouillé: ${planText}. ${supplierPressure.label}; recommandation: encaisser le reste en ${supplierPressure.recommendedInstallments} échéance(s).`
 }
 
 function RowActions({ label, onAction }: { label: string; onAction: (message: string) => void }) {
