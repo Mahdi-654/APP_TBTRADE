@@ -309,7 +309,7 @@ function App() {
           {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} collectionCases={collectionCases} setCollectionCases={setCollectionCases} collectionDrafts={collectionDrafts} setCollectionDrafts={setCollectionDrafts} />}
           {active === 'tresorerie' && <Tresorerie onAction={setMessage} />}
           {active === 'stocks' && <Stocks filters={filters} onFiltersChange={setFilters} onAction={setMessage} stocks={stocks} workflowCases={workflowCases} user={sessionUser} onCreateStockAlert={createStockAlert} onThresholdChange={updateStockThreshold} onOpenApproWorkflow={openApproWorkflow} />}
-          {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} notificationCaseToOpen={notificationCaseToOpen} onNotificationCaseOpened={() => setNotificationCaseToOpen(null)} />}
+          {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} collectionCases={collectionCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} notificationCaseToOpen={notificationCaseToOpen} onNotificationCaseOpened={() => setNotificationCaseToOpen(null)} />}
           {active === 'rapports' && <Rapports onAction={setMessage} />}
           {active === 'users' && <UsersManagement accounts={accounts} setAccounts={setAccounts} onAction={setMessage} />}
           {active === 'profil' && <Profile user={sessionUser} onSave={updateProfile} onAction={setMessage} />}
@@ -1742,6 +1742,7 @@ function Taches({
   user,
   workflowCases,
   setWorkflowCases,
+  collectionCases,
   departmentFocus,
   onDepartmentFocusChange,
   notificationCaseToOpen,
@@ -1752,6 +1753,7 @@ function Taches({
   user: UserAccount
   workflowCases: WorkflowCase[]
   setWorkflowCases: (cases: WorkflowCase[]) => void
+  collectionCases: CollectionCase[]
   departmentFocus: Role | 'all'
   onDepartmentFocusChange: (role: Role | 'all') => void
   notificationCaseToOpen: string | null
@@ -1761,6 +1763,7 @@ function Taches({
   const [openedCaseId, setOpenedCaseId] = useState<string | null>(null)
   const [reply, setReply] = useState('Je vais le faire, sinon je propose un traitement dès que je suis disponible.')
   const [promisedAt, setPromisedAt] = useState('Aujourd’hui 14:30')
+  const [reopenObservation, setReopenObservation] = useState('')
   const [draft, setDraft] = useState({
     title: 'Financer l’appro fournisseur',
     supplier: 'Fournisseur à préciser',
@@ -1849,30 +1852,6 @@ function Taches({
     onAction(`Tâche ${nextCase.id} attribuée à ${roleLabels[draft.firstRole]}.`)
   }
 
-  const alertCase = (caseId: string) => {
-    const currentCase = workflowCases.find((item) => item.id === caseId)
-    if (!currentCase) return
-    const updated = workflowCases.map((item) => item.id === caseId
-      ? {
-          ...item,
-          status: 'Bloqué' as const,
-          alerts: [
-            ...item.alerts,
-            {
-              id: Date.now(),
-              from: 'dg' as const,
-              to: item.currentRole,
-              sentAt: 'Maintenant',
-              message: `Vous êtes désormais demandé pour traiter ce dossier dans 3h: ${item.title}.`,
-              kind: 'dg-alert' as const,
-            },
-          ],
-        }
-      : item)
-    setWorkflowCases(updated)
-    onAction(`Alerte envoyée au département ${roleLabels[currentCase.currentRole]} pour ${currentCase.id}.`)
-  }
-
   const replyToDg = (caseId: string) => {
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId) return item
@@ -1923,6 +1902,10 @@ function Taches({
       const currentIndex = item.steps.findIndex((step) => step.role === item.currentRole)
       if (currentIndex === -1 || item.steps[currentIndex]?.status === 'done') return item
       const dgOwner = getPrimaryUserForRole('dg', accounts).name
+      const recoveryCase = item.collectionCaseId ? collectionCases.find((collection) => collection.id === item.collectionCaseId) : null
+      const recoverySummary = recoveryCase && user.role === 'commercial'
+        ? buildOfficialRecoverySummary(recoveryCase)
+        : null
       return {
         ...item,
         currentRole: 'dg' as const,
@@ -1935,12 +1918,12 @@ function Taches({
             from: user.role,
             to: 'dg' as const,
             sentAt: 'Maintenant',
-            message: `${user.service} a effectué son travail sur ${item.id}. Décision département verrouillée. Seule la DG peut rouvrir ce dossier pour ce département ou le transférer vers le prochain service.`,
+            message: recoverySummary ?? `${user.service} a effectué son travail sur ${item.id}. Décision département verrouillée. Seule la DG peut rouvrir ce dossier pour ce département ou le transférer vers le prochain service.`,
             kind: 'reply' as const,
           },
         ],
         steps: item.steps.map((step, index) => {
-          if (index === currentIndex) return { ...step, status: 'done' as const, note: `Effectué par ${user.service}. Verrouillé sauf réouverture DG.` }
+          if (index === currentIndex) return { ...step, status: 'done' as const, note: recoverySummary ? `Recouvrement ${recoveryCase?.id} enregistré et transmis à la DG.` : `Effectué par ${user.service}. Verrouillé sauf réouverture DG.` }
           return step
         }),
       }
@@ -1951,9 +1934,15 @@ function Taches({
 
   const transferCase = (caseId: string, nextRole: Role) => {
     const nextOwner = getPrimaryUserForRole(nextRole, accounts)
+    const targetCase = workflowCases.find((item) => item.id === caseId)
+    const isReopeningDoneStep = Boolean(targetCase?.steps.some((step) => step.role === nextRole && step.status === 'done'))
+    const normalizedObservation = reopenObservation.trim()
+    if (isReopeningDoneStep && !normalizedObservation) {
+      onAction('Réouverture refusée: la DG doit écrire une observation claire pour rouvrir ce dossier au même département.')
+      return
+    }
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId) return item
-      const isReopeningDoneStep = item.steps.some((step) => step.role === nextRole && step.status === 'done')
       return {
         ...item,
         currentRole: nextRole,
@@ -1964,7 +1953,7 @@ function Taches({
           label: roleLabels[role],
           status: role === nextRole ? 'active' as const : item.steps.some((step) => step.role === role && step.status === 'done') ? 'done' as const : 'waiting' as const,
           note: role === nextRole
-            ? isReopeningDoneStep ? `Réouvert par la DG pour complément ${roleLabels[role]}` : `Dossier transféré par la DG à ${roleLabels[role]}`
+            ? isReopeningDoneStep ? `Réouvert par la DG: ${normalizedObservation}` : `Dossier transféré par la DG à ${roleLabels[role]}`
             : item.steps.find((step) => step.role === role)?.note ?? `Disponible si la DG le transfère à ${roleLabels[role]}`,
         })),
         alerts: [
@@ -1975,18 +1964,20 @@ function Taches({
             to: nextRole,
             sentAt: 'Maintenant',
             message: isReopeningDoneStep
-              ? `Dossier rouvert par la DG vers ${roleLabels[nextRole]} pour complément: ${item.title}.`
+              ? `Dossier rouvert par la DG vers ${roleLabels[nextRole]} pour complément: ${normalizedObservation}`
               : `Dossier transféré par la DG vers ${roleLabels[nextRole]}: ${item.title}.`,
+            priorityDecision: isReopeningDoneStep ? 'observed' as const : undefined,
             kind: 'dg-alert' as const,
           },
         ],
       }
     })
     setWorkflowCases(updated)
+    setReopenObservation('')
     onDepartmentFocusChange(nextRole)
     setActiveTab('Tous')
     setOpenedCaseId(caseId)
-    onAction(`Dossier ${caseId} transféré vers ${roleLabels[nextRole]}.`)
+    onAction(isReopeningDoneStep ? `Dossier ${caseId} rouvert avec observation DG.` : `Dossier ${caseId} transféré vers ${roleLabels[nextRole]}.`)
   }
 
   const closeCaseByDg = (caseId: string) => {
@@ -2079,14 +2070,16 @@ function Taches({
         <DossierDetailsModal
           item={openedCase}
           user={user}
+          collectionCase={openedCase.collectionCaseId ? collectionCases.find((item) => item.id === openedCase.collectionCaseId) : undefined}
         reply={reply}
         promisedAt={promisedAt}
-        onReplyChange={setReply}
-        onPromisedAtChange={setPromisedAt}
+          onReplyChange={setReply}
+          onPromisedAtChange={setPromisedAt}
+          reopenObservation={reopenObservation}
+          onReopenObservationChange={setReopenObservation}
           onClose={() => setOpenedCaseId(null)}
           onReply={() => replyToDg(openedCase.id)}
           onComplete={() => completeStep(openedCase.id)}
-          onAlert={() => alertCase(openedCase.id)}
           onTransfer={(nextRole) => transferCase(openedCase.id, nextRole)}
           onCloseCase={() => closeCaseByDg(openedCase.id)}
         />
@@ -2230,27 +2223,31 @@ function SimpleDossierBox({
 function DossierDetailsModal({
   item,
   user,
-  reply,
-  promisedAt,
-  onReplyChange,
-  onPromisedAtChange,
+  collectionCase,
+  reply: _reply,
+  promisedAt: _promisedAt,
+  onReplyChange: _onReplyChange,
+  onPromisedAtChange: _onPromisedAtChange,
+  reopenObservation,
+  onReopenObservationChange,
   onClose,
-  onReply,
+  onReply: _onReply,
   onComplete,
-  onAlert,
   onTransfer,
   onCloseCase,
 }: {
   item: WorkflowCase
   user: UserAccount
+  collectionCase?: CollectionCase
   reply: string
   promisedAt: string
   onReplyChange: (value: string) => void
   onPromisedAtChange: (value: string) => void
+  reopenObservation: string
+  onReopenObservationChange: (value: string) => void
   onClose: () => void
   onReply: () => void
   onComplete: () => void
-  onAlert: () => void
   onTransfer: (role: Role) => void
   onCloseCase: () => void
 }) {
@@ -2260,6 +2257,7 @@ function DossierDetailsModal({
   const doneSteps = item.steps.filter((step) => step.status === 'done')
   const canCloseCase = isDg && item.status === 'Retour DG' && doneSteps.length > 0
   const allDepartmentsDone = item.steps.every((step) => step.status === 'done')
+  const pendingInstallments = collectionCase?.paymentPlan.filter((payment) => payment.status !== 'Payé') ?? []
 
   return (
     <div className="dossier-modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -2291,6 +2289,20 @@ function DossierDetailsModal({
           <strong>{getNextActionLabel(item, user)}</strong>
           <small>{sla.label}</small>
         </div>
+
+        {collectionCase && (
+          <div className="dossier-modal-section official-recovery-box">
+            <h3>Recouvrement officiel</h3>
+            <div className="official-recovery-summary">
+              <article><span>Client</span><strong>{collectionCase.client}</strong></article>
+              <article><span>Commercial</span><strong>{collectionCase.commercial}</strong></article>
+              <article><span>Payé</span><strong>{formatNumber(collectionCase.recoveredAmount)} TND</strong></article>
+              <article><span>Reste</span><strong>{formatNumber(getCollectionRemaining(collectionCase))} TND</strong></article>
+            </div>
+            <InstallmentBreakdown payments={pendingInstallments} />
+            <p className="muted">Ce plan est la source officielle. La DG le reçoit tel quel; il ne change que si la DG rouvre le dossier avec observation.</p>
+          </div>
+        )}
 
         {item.id.startsWith('DOS-STK') && (
           <div className="stock-order-note">
@@ -2347,9 +2359,17 @@ function DossierDetailsModal({
             <strong>Décision Direction Générale</strong>
             <span>
               {item.status === 'Retour DG'
-                ? `${roleLabels[item.alerts.at(-1)?.from ?? item.currentRole]} a terminé son travail. Choisissez un autre département ou clôturez le dossier.`
+                ? `${roleLabels[item.alerts.at(-1)?.from ?? item.currentRole]} a terminé son travail. Vous pouvez clôturer ou rouvrir avec observation.`
                 : 'Transférer ce dossier vers un seul département.'}
             </span>
+            <label className="dg-reopen-observation">
+              Observation obligatoire si réouverture
+              <textarea
+                value={reopenObservation}
+                onChange={(event) => onReopenObservationChange(event.target.value)}
+                placeholder="Exemple: Recouvrement incomplet, demander au commercial de corriger les dates ou montants."
+              />
+            </label>
             <div className="transfer-buttons">
               {workflowRoles.map((role) => (
                 <button disabled={role === item.currentRole} key={role} type="button" onClick={() => onTransfer(role)}>
@@ -2363,32 +2383,14 @@ function DossierDetailsModal({
                 {allDepartmentsDone ? 'Clôturer définitivement' : 'Clôturer le dossier'}
               </button>
             )}
-            {item.currentRole !== 'dg' && (
-              <button className="secondary-action danger" type="button" onClick={onAlert}>
-                <Bell size={15} />
-                Relancer le département actuel
-              </button>
-            )}
           </div>
         ) : (
           <div className="department-reply">
-            <label>
-              Réponse à la DG
-              <input value={reply} onChange={(event) => onReplyChange(event.target.value)} />
-            </label>
-            <label>
-              Engagement
-              <input value={promisedAt} onChange={(event) => onPromisedAtChange(event.target.value)} />
-            </label>
             <div className="workflow-actions">
-              <button className="secondary-action" type="button" onClick={onReply}>
-                <Send size={15} />
-                Répondre
-              </button>
               {isCurrentOwner && (
                 <button className="primary-action" type="button" onClick={onComplete}>
                   <ClipboardCheck size={15} />
-                  Dossier traité
+                  Valider et envoyer à la DG
                 </button>
               )}
             </div>
@@ -3095,6 +3097,12 @@ function buildDirectionRecoveryNotice(
   }
 }
 
+function buildOfficialRecoverySummary(item: CollectionCase) {
+  const remaining = getCollectionRemaining(item)
+  const installments = item.paymentPlan.filter((payment) => payment.status !== 'Payé')
+  return `Recouvrement officiel enregistré: dossier ${item.id}, client ${item.client}, commercial ${item.commercial}, payé ${formatNumber(item.recoveredAmount)} TND, reste ${formatNumber(remaining)} TND. Échéances: ${formatInstallmentList(installments)}. Dossier commercial effectué et verrouillé pour la DG.`
+}
+
 function RowActions({ label, onAction }: { label: string; onAction: (message: string) => void }) {
   return (
     <div className="row-actions">
@@ -3170,8 +3178,8 @@ function getNextActionLabel(item: WorkflowCase, user: UserAccount) {
   if (user.role === 'dg') {
     const lastReply = item.alerts.findLast((alert) => alert.response || alert.to === 'dg')
     if (lastReply?.promisedAt) return `Décider sur le délai proposé: ${lastReply.promisedAt}.`
-    if (item.status === 'Bloqué') return `Arbitrer ou relancer ${roleLabels[item.currentRole]}.`
-    return `Suivre ${roleLabels[item.currentRole]} et relancer si nécessaire.`
+    if (item.status === 'Bloqué') return `Arbitrer ${roleLabels[item.currentRole]} ou rouvrir avec observation.`
+    return `Suivre ${roleLabels[item.currentRole]} et décider si nécessaire.`
   }
   if (item.currentRole === user.role) {
     return item.id.startsWith('STOCK-')
@@ -3242,11 +3250,11 @@ function formatDossierDate(item: WorkflowCase) {
 function getSlaInfo(item: WorkflowCase) {
   const hours = departmentSlaHours[item.currentRole]
   const score = getPriorityScore(item)
-  const relances = item.alerts.filter((alert) => alert.to === item.currentRole && !alert.response).length
+  const pendingRequests = item.alerts.filter((alert) => alert.to === item.currentRole && !alert.response).length
   if (item.status === 'Terminé') return { label: 'Clôturé', tone: 'success' as StatusTone, detail: 'Historique verrouillé' }
   if (item.status === 'Retour DG') return { label: 'Validation DG', tone: 'info' as StatusTone, detail: 'En attente de décision Direction Générale' }
-  if (item.status === 'Bloqué' || score >= 82 || relances >= 3) return { label: 'Hors SLA', tone: 'danger' as StatusTone, detail: `Escalade DG requise - SLA ${hours}h` }
-  if (score >= 64 || relances >= 2) return { label: 'À surveiller', tone: 'warning' as StatusTone, detail: `Relance avant dépassement - SLA ${hours}h` }
+  if (item.status === 'Bloqué' || score >= 82 || pendingRequests >= 3) return { label: 'Hors SLA', tone: 'danger' as StatusTone, detail: `Décision DG requise - SLA ${hours}h` }
+  if (score >= 64 || pendingRequests >= 2) return { label: 'À surveiller', tone: 'warning' as StatusTone, detail: `Suivi avant dépassement - SLA ${hours}h` }
   return { label: `SLA ${hours}h`, tone: 'info' as StatusTone, detail: `Service attendu: ${roleLabels[item.currentRole]}` }
 }
 
@@ -3281,16 +3289,21 @@ function buildAppNotifications(workflowCases: WorkflowCase[], collectionCases: C
   )
 
   const recoveryNotifications = user.role === 'dg'
-    ? collectionCases.flatMap((item) => (item.directionNotices ?? []).map((notice) => ({
-        id: `recovery-${item.id}-${notice.id}`,
-        title: `${notice.dossierId} - Recouvrement ${notice.client}`,
-        detail: `${notice.commercial}: reçu ${formatNumber(notice.paidAmount)} TND, reste ${formatNumber(notice.remainingAmount)} TND.`,
-        meta: `${formatInstallmentList(notice.installments)} - Envoyée le ${notice.sentAt}`,
-        tone: notice.remainingAmount > 0 ? 'warning' as const : 'success' as const,
-        target: {
-          screen: 'encaissements' as ScreenKey,
-        },
-      })))
+    ? collectionCases.flatMap((item) => {
+        const linkedWorkflowCase = workflowCases.find((workflowCase) => workflowCase.collectionCaseId === item.id)
+        return (item.directionNotices ?? []).map((notice) => ({
+          id: `recovery-${item.id}-${notice.id}`,
+          title: `${notice.dossierId} - Recouvrement ${notice.client}`,
+          detail: `${notice.commercial}: reçu ${formatNumber(notice.paidAmount)} TND, reste ${formatNumber(notice.remainingAmount)} TND.`,
+          meta: `${formatInstallmentList(notice.installments)} - Envoyée le ${notice.sentAt}`,
+          tone: notice.remainingAmount > 0 ? 'warning' as const : 'success' as const,
+          target: {
+            screen: linkedWorkflowCase ? 'taches' as ScreenKey : 'encaissements' as ScreenKey,
+            caseId: linkedWorkflowCase?.id,
+            department: linkedWorkflowCase?.currentRole,
+          },
+        }))
+      })
     : []
 
   return [...recoveryNotifications, ...workflowNotifications].slice(0, 12)

@@ -74,6 +74,7 @@ export type WorkflowCase = {
   status: 'Bloqué' | 'En cours' | 'Retour DG' | 'Terminé'
   steps: WorkflowStep[]
   alerts: WorkflowAlert[]
+  collectionCaseId?: string
 }
 
 export type StockRow = {
@@ -333,10 +334,11 @@ export const initialWorkflowCases: WorkflowCase[] = [
     currentRole: 'commercial',
     owner: 'Mahdi',
     status: 'En cours',
+    collectionCaseId: 'REC-2027-001',
     steps: [
       { role: 'finance', label: 'Impact trésorerie', status: 'waiting', note: 'À vérifier après plan commercial' },
       { role: 'compta', label: 'Facture client', status: 'waiting', note: 'Rapprocher facture et règlement' },
-      { role: 'commercial', label: 'Plan recouvrement', status: 'active', note: 'Mytech a payé 4 000 TND, reste 1 000 TND à planifier' },
+      { role: 'commercial', label: 'Plan recouvrement', status: 'active', note: 'Valider le recouvrement REC-2027-001 sans ressaisie' },
       { role: 'appro', label: 'Impact livraison', status: 'waiting', note: 'Aucun blocage appro pour le test' },
     ],
     alerts: [

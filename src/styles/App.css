@@ -3807,6 +3807,33 @@ tbody tr:hover {
   background: #f8fbff;
 }
 
+.dg-reopen-observation {
+  display: grid;
+  gap: 6px;
+  color: #415772;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dg-reopen-observation textarea {
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid #d6e2f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: #102033;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dg-reopen-observation textarea:focus {
+  border-color: #2f75de;
+  box-shadow: 0 0 0 3px rgba(47, 117, 222, 0.12);
+  outline: none;
+}
+
 .locked-history {
   margin-top: 14px;
   padding: 12px;
