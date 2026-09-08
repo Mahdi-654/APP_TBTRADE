@@ -2538,6 +2538,125 @@ tbody tr:hover {
   font-weight: 850;
 }
 
+.business-flow-guide {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #dce6f2;
+  border-radius: 8px;
+  background:
+    linear-gradient(120deg, rgba(47, 117, 222, 0.07), rgba(16, 166, 108, 0.06)),
+    #ffffff;
+  box-shadow: 0 12px 28px rgba(19, 48, 82, 0.06);
+}
+
+.flow-guide-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.flow-guide-header h2 {
+  margin: 4px 0 6px;
+  color: #102033;
+  font-size: 21px;
+  line-height: 1.22;
+}
+
+.flow-guide-header p {
+  max-width: 860px;
+  margin: 0;
+  color: #536982;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.flow-rule-grid,
+.department-logic-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.flow-rule-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.flow-rule-grid article,
+.department-logic-grid article {
+  min-width: 0;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #dce8f5;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.flow-rule-grid article {
+  align-content: start;
+}
+
+.flow-rule-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #2f75de;
+  box-shadow: 0 10px 20px rgba(47, 117, 222, 0.16);
+}
+
+.flow-rule-grid strong,
+.department-logic-grid strong {
+  color: #102033;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.flow-rule-grid p,
+.department-logic-grid p {
+  margin: 0;
+  color: #60758d;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.5;
+}
+
+.department-logic-grid {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+}
+
+.department-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  color: #2f75de;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.department-route span {
+  min-height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cfe0f6;
+  border-radius: 999px;
+  background: #f4f8ff;
+}
+
+.department-logic-grid small {
+  margin-top: auto;
+  color: #0f8b5c;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .department-filter {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));

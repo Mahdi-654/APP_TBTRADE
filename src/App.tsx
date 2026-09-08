@@ -1972,6 +1972,7 @@ function Taches({
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId || item.currentRole !== user.role) return item
       const currentIndex = item.steps.findIndex((step) => step.role === item.currentRole)
+      if (currentIndex === -1 || item.steps[currentIndex]?.status === 'done') return item
       const dgOwner = getPrimaryUserForRole('dg', accounts).name
       return {
         ...item,
@@ -1985,12 +1986,12 @@ function Taches({
             from: user.role,
             to: 'dg' as const,
             sentAt: 'Maintenant',
-            message: `${user.service} a clôturé son travail sur ${item.id}. Décision DG requise: transférer à un autre département ou clôturer le dossier.`,
+            message: `${user.service} a effectué son travail sur ${item.id}. Décision département verrouillée. Seule la DG peut rouvrir ce dossier pour ce département ou le transférer vers le prochain service.`,
             kind: 'reply' as const,
           },
         ],
         steps: item.steps.map((step, index) => {
-          if (index === currentIndex) return { ...step, status: 'done' as const, note: `Traité par ${user.service}, en attente validation DG` }
+          if (index === currentIndex) return { ...step, status: 'done' as const, note: `Effectué par ${user.service}. Verrouillé sauf réouverture DG.` }
           return step
         }),
       }
@@ -2003,6 +2004,7 @@ function Taches({
     const nextOwner = getPrimaryUserForRole(nextRole, accounts)
     const updated = workflowCases.map((item) => {
       if (item.id !== caseId) return item
+      const isReopeningDoneStep = item.steps.some((step) => step.role === nextRole && step.status === 'done')
       return {
         ...item,
         currentRole: nextRole,
@@ -2012,7 +2014,9 @@ function Taches({
           role,
           label: roleLabels[role],
           status: role === nextRole ? 'active' as const : item.steps.some((step) => step.role === role && step.status === 'done') ? 'done' as const : 'waiting' as const,
-          note: role === nextRole ? `Dossier transféré par la DG à ${roleLabels[role]}` : item.steps.find((step) => step.role === role)?.note ?? `Disponible si la DG le transfère à ${roleLabels[role]}`,
+          note: role === nextRole
+            ? isReopeningDoneStep ? `Réouvert par la DG pour complément ${roleLabels[role]}` : `Dossier transféré par la DG à ${roleLabels[role]}`
+            : item.steps.find((step) => step.role === role)?.note ?? `Disponible si la DG le transfère à ${roleLabels[role]}`,
         })),
         alerts: [
           ...item.alerts,
@@ -2021,7 +2025,9 @@ function Taches({
             from: 'dg' as const,
             to: nextRole,
             sentAt: 'Maintenant',
-            message: `Dossier transféré par la DG vers ${roleLabels[nextRole]}: ${item.title}.`,
+            message: isReopeningDoneStep
+              ? `Dossier rouvert par la DG vers ${roleLabels[nextRole]} pour complément: ${item.title}.`
+              : `Dossier transféré par la DG vers ${roleLabels[nextRole]}: ${item.title}.`,
             kind: 'dg-alert' as const,
           },
         ],
@@ -2065,9 +2071,10 @@ function Taches({
       <ModuleHeader
         eyebrow="Module dossiers"
         title="Boîtes par département et décision DG"
-        description="Chaque service traite puis renvoie à la DG. La DG transfère, rouvre ou clôture le dossier."
+        description="Chaque opération devient un dossier: la DG distribue, le département décide et traite, puis le dossier revient verrouillé à la DG."
       />
       <SimpleTaskHeader cases={workflowCases} user={user} notifications={inboxItems.length} />
+      <BusinessFlowGuide />
       {user.role === 'dg' && (
         <DepartmentFilter cases={workflowCases} active={departmentFocus} onChange={(role) => {
           onDepartmentFocusChange(role)
@@ -2185,6 +2192,110 @@ function ImportantDossierDates({ cases }: { cases: WorkflowCase[] }) {
         </article>
       ))}
       {important.length === 0 && <p className="muted">Aucune date urgente.</p>}
+    </section>
+  )
+}
+
+function BusinessFlowGuide() {
+  const rules = [
+    {
+      icon: LockKeyhole,
+      title: 'Dossier verrouillé après traitement',
+      detail: 'Quand un département clique sur Dossier traité, son travail est marqué effectué et ne peut plus être modifié.',
+      status: 'Verrou DG',
+    },
+    {
+      icon: ShieldAlert,
+      title: 'Réouverture uniquement Direction',
+      detail: 'La DG peut rouvrir le même dossier au même département pour complément, avec une trace claire dans l’historique.',
+      status: 'Audit',
+    },
+    {
+      icon: Workflow,
+      title: 'Une opération = un dossier',
+      detail: 'Commande, facture, paiement fournisseur, règlement client ou FNR suivent le même fil de décision interservices.',
+      status: 'Flux unique',
+    },
+    {
+      icon: MessageSquareText,
+      title: 'Communication simple',
+      detail: 'Chaque décision, observation DG, réponse service et preuve fournisseur reste dans le même dossier.',
+      status: 'Messages',
+    },
+  ] as const
+
+  const departmentRules = [
+    {
+      from: 'DG',
+      to: 'Tous',
+      title: 'Distribution des tâches',
+      detail: 'La Direction attribue le dossier, pose des observations et décide du prochain département sans écraser la décision métier.',
+      proof: 'Ordre DG + historique',
+    },
+    {
+      from: 'Commercial',
+      to: 'Finance / Compta',
+      title: 'FNR et factures clients',
+      detail: 'Le commercial renseigne le recouvrement client. Finance contrôle l’impact trésorerie et Compta rapproche les factures.',
+      proof: 'Plan recouvrement + facture client',
+    },
+    {
+      from: 'Appro',
+      to: 'Finance',
+      title: 'Commande fournisseur',
+      detail: 'L’Appro passe la commande seulement avec besoin justifié, fournisseur identifié et preuve de passation.',
+      proof: 'Bon de commande / preuve FRS',
+    },
+    {
+      from: 'Finance',
+      to: 'Appro / Commercial',
+      title: 'Arbitrage trésorerie',
+      detail: 'Finance rapproche les paiements fournisseurs avec les encaissements attendus et peut demander accélération client.',
+      proof: 'Échéancier + situation bancaire',
+    },
+    {
+      from: 'Compta',
+      to: 'Finance',
+      title: 'Rapprochement règlement',
+      detail: 'Compta vérifie facture, règlement, lettrage et pièces justificatives avant décision financière finale.',
+      proof: 'Facture + lettrage',
+    },
+  ] as const
+
+  return (
+    <section className="business-flow-guide">
+      <div className="flow-guide-header">
+        <div>
+          <span className="eyebrow">Logique consultative entreprise</span>
+          <h2>Des dossiers verrouillés, traçables et reliés entre tous les départements.</h2>
+          <p>La DG distribue les tâches et observe. Les départements prennent leur décision métier, terminent leur travail, puis le dossier revient à la DG pour transfert, clôture ou réouverture contrôlée.</p>
+        </div>
+        <Status value="Production workflow" />
+      </div>
+      <div className="flow-rule-grid">
+        {rules.map(({ icon: Icon, title, detail, status }) => (
+          <article key={title}>
+            <span className="flow-rule-icon"><Icon size={17} /></span>
+            <strong>{title}</strong>
+            <p>{detail}</p>
+            <Status value={status} />
+          </article>
+        ))}
+      </div>
+      <div className="department-logic-grid">
+        {departmentRules.map((rule) => (
+          <article key={rule.title}>
+            <div className="department-route">
+              <span>{rule.from}</span>
+              <ChevronRight size={14} />
+              <span>{rule.to}</span>
+            </div>
+            <strong>{rule.title}</strong>
+            <p>{rule.detail}</p>
+            <small>Preuve attendue: {rule.proof}</small>
+          </article>
+        ))}
+      </div>
     </section>
   )
 }
@@ -2386,6 +2497,15 @@ function DossierDetailsModal({
               </article>
             ))}
           </div>
+          {doneSteps.length > 0 && (
+            <div className="locked-history">
+              <LockKeyhole size={16} />
+              <span>
+                <strong>{doneSteps.length} département(s) effectué(s) et verrouillé(s)</strong>
+                Seule la Direction Générale peut rouvrir une étape déjà traitée pour demander un complément sur le même dossier.
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="dossier-modal-section">
