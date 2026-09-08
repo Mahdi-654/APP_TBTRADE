@@ -40,7 +40,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ElementType, FormEvent, ReactNode } from 'react'
 import './styles/App.css'
 
@@ -108,6 +108,19 @@ type CollectionDraft = {
   urgency: DgObservation['urgency']
 }
 
+type AppNotification = {
+  id: string
+  title: string
+  detail: string
+  meta: string
+  tone: 'info' | 'warning' | 'danger' | 'success'
+  target: {
+    screen: ScreenKey
+    caseId?: string
+    department?: Role | 'all'
+  }
+}
+
 function createInitialCollectionDrafts() {
   return Object.fromEntries(initialCollectionCases.map((item) => [
     item.id,
@@ -143,6 +156,8 @@ function App() {
   const [collectionCases, setCollectionCases] = useState<CollectionCase[]>(initialCollectionCases)
   const [collectionDrafts, setCollectionDrafts] = useState(createInitialCollectionDrafts)
   const [departmentFocus, setDepartmentFocus] = useState<Role | 'all'>('all')
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false)
+  const [notificationCaseToOpen, setNotificationCaseToOpen] = useState<string | null>(null)
   const current = screens[active]
 
   const login = (email: string) => {
@@ -257,7 +272,20 @@ function App() {
   }
 
   const visibleNav = navItems.filter((item) => rolePermissions[sessionUser.role].includes(item.key))
-  const notificationCount = countNotifications(workflowCases, sessionUser)
+  const notifications = buildAppNotifications(workflowCases, collectionCases, sessionUser)
+  const notificationCount = notifications.length
+
+  const openNotification = (notification: AppNotification) => {
+    setNotificationPanelOpen(false)
+    if (!rolePermissions[sessionUser.role].includes(notification.target.screen)) {
+      setMessage('Accès refusé: cette notification concerne un autre département.')
+      return
+    }
+    if (notification.target.department) setDepartmentFocus(notification.target.department)
+    if (notification.target.caseId) setNotificationCaseToOpen(notification.target.caseId)
+    setActive(notification.target.screen)
+    setMessage(`Notification ouverte: ${notification.title}.`)
+  }
 
   return (
     <div className="app-shell">
@@ -268,9 +296,12 @@ function App() {
           message={message}
           user={sessionUser}
           notificationCount={notificationCount}
+          notifications={notifications}
+          notificationPanelOpen={notificationPanelOpen}
+          onNotificationPanelToggle={() => setNotificationPanelOpen((open) => !open)}
           onLogout={logout}
           onProfile={() => changeScreen('profil')}
-          onNotifications={() => changeScreen('taches')}
+          onNotificationOpen={openNotification}
         />
         <section className="page" data-accent={current.color}>
           {active === 'dashboard' && <Dashboard onAction={setMessage} user={sessionUser} workflowCases={workflowCases} stocks={stocks} onOpenDepartment={openDepartmentService} onOpenScreen={changeScreen} />}
@@ -279,7 +310,7 @@ function App() {
           {active === 'decaissements' && <Cashflow type="decaissements" filters={filters} onFiltersChange={setFilters} onAction={setMessage} user={sessionUser} collectionCases={collectionCases} setCollectionCases={setCollectionCases} collectionDrafts={collectionDrafts} setCollectionDrafts={setCollectionDrafts} />}
           {active === 'tresorerie' && <Tresorerie onAction={setMessage} />}
           {active === 'stocks' && <Stocks filters={filters} onFiltersChange={setFilters} onAction={setMessage} stocks={stocks} workflowCases={workflowCases} user={sessionUser} onCreateStockAlert={createStockAlert} onThresholdChange={updateStockThreshold} onOpenApproWorkflow={openApproWorkflow} />}
-          {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} />}
+          {active === 'taches' && <Taches accounts={accounts} onAction={setMessage} user={sessionUser} workflowCases={workflowCases} setWorkflowCases={setWorkflowCases} departmentFocus={departmentFocus} onDepartmentFocusChange={setDepartmentFocus} notificationCaseToOpen={notificationCaseToOpen} onNotificationCaseOpened={() => setNotificationCaseToOpen(null)} />}
           {active === 'rapports' && <Rapports onAction={setMessage} />}
           {active === 'users' && <UsersManagement accounts={accounts} setAccounts={setAccounts} onAction={setMessage} />}
           {active === 'profil' && <Profile user={sessionUser} onSave={updateProfile} onAction={setMessage} />}
@@ -424,17 +455,23 @@ function Topbar({
   message,
   user,
   notificationCount,
+  notifications,
+  notificationPanelOpen,
+  onNotificationPanelToggle,
   onLogout,
   onProfile,
-  onNotifications,
+  onNotificationOpen,
 }: {
   title: string
   message: string
   user: UserAccount
   notificationCount: number
+  notifications: AppNotification[]
+  notificationPanelOpen: boolean
+  onNotificationPanelToggle: () => void
   onLogout: () => void
   onProfile: () => void
-  onNotifications: () => void
+  onNotificationOpen: (notification: AppNotification) => void
 }) {
   return (
     <header className="topbar">
@@ -443,10 +480,37 @@ function Topbar({
         <small>{message}</small>
       </div>
       <div className="top-actions">
-        <button className="icon-btn" type="button" title="Notifications" onClick={onNotifications}>
-          <Bell size={16} />
-          {notificationCount > 0 && <span className="notification-dot">{notificationCount}</span>}
-        </button>
+        <div className="notification-center">
+          <button className="icon-btn" type="button" title="Notifications dossiers" aria-expanded={notificationPanelOpen} onClick={onNotificationPanelToggle}>
+            <Bell size={16} />
+            {notificationCount > 0 && <span className="notification-dot">{notificationCount}</span>}
+          </button>
+          {notificationPanelOpen && (
+            <section className="notification-popover" aria-label="Notifications dossiers">
+              <header>
+                <span>
+                  <strong>Notifications dossiers</strong>
+                  <small>{notificationCount} dossier(s) à consulter</small>
+                </span>
+                <Status value={user.role === 'dg' ? 'Direction' : roleLabels[user.role]} />
+              </header>
+              <div className="notification-popover-list">
+                {notifications.map((notification) => (
+                  <button key={notification.id} type="button" data-tone={notification.tone} onClick={() => onNotificationOpen(notification)}>
+                    <Bell size={15} />
+                    <span>
+                      <strong>{notification.title}</strong>
+                      <small>{notification.detail}</small>
+                      <em>{notification.meta}</em>
+                    </span>
+                    <ChevronRight size={15} />
+                  </button>
+                ))}
+                {notifications.length === 0 && <p className="muted">Aucune notification dossier pour ce rôle.</p>}
+              </div>
+            </section>
+          )}
+        </div>
         <div className="topbar-brand" aria-label="TBTrade">
           <img src="/tbtrade-logo.svg" alt="" />
         </div>
@@ -1395,16 +1459,11 @@ function CommercialRecovery({
               </div>
               <PaymentPlanRail payments={item.paymentPlan} />
               {canObserve && latestDirectionNotice && (
-                <div className="direction-recovery-notice">
+                <div className="direction-recovery-inline">
                   <Bell size={16} />
                   <span>
-                    <strong>Notification recouvrement reçue - {latestDirectionNotice.dossierId}</strong>
-                    <small>
-                      Client: {latestDirectionNotice.client} - Commercial: {latestDirectionNotice.commercial} - Reçu: {formatNumber(latestDirectionNotice.paidAmount)} TND - Reste: {formatNumber(latestDirectionNotice.remainingAmount)} TND
-                    </small>
-                    <InstallmentBreakdown payments={latestDirectionNotice.installments} />
-                    <em>{latestDirectionNotice.message}</em>
-                    <small>Envoyée à la Direction le {latestDirectionNotice.sentAt}. Plan commercial verrouillé pour ce dossier.</small>
+                    <strong>Notification DG disponible dans la cloche en haut</strong>
+                    <small>{latestDirectionNotice.dossierId}: même client, même commercial, mêmes échéances verrouillées.</small>
                   </span>
                 </div>
               )}
@@ -1808,6 +1867,8 @@ function Taches({
   setWorkflowCases,
   departmentFocus,
   onDepartmentFocusChange,
+  notificationCaseToOpen,
+  onNotificationCaseOpened,
 }: {
   accounts: UserAccount[]
   onAction: (message: string) => void
@@ -1816,6 +1877,8 @@ function Taches({
   setWorkflowCases: (cases: WorkflowCase[]) => void
   departmentFocus: Role | 'all'
   onDepartmentFocusChange: (role: Role | 'all') => void
+  notificationCaseToOpen: string | null
+  onNotificationCaseOpened: () => void
 }) {
   const [activeTab, setActiveTab] = useState('Tous')
   const [openedCaseId, setOpenedCaseId] = useState<string | null>(null)
@@ -1849,6 +1912,15 @@ function Taches({
     return departmentScoped.filter((item) => item.status === activeTab)
   }, [activeTab, departmentFocus, user, workflowCases])
   const openedCase = openedCaseId ? workflowCases.find((item) => item.id === openedCaseId) ?? null : null
+
+  useEffect(() => {
+    if (!notificationCaseToOpen) return
+    const targetCase = workflowCases.find((item) => item.id === notificationCaseToOpen)
+    if (!targetCase) return
+    setActiveTab('Tous')
+    setOpenedCaseId(targetCase.id)
+    onNotificationCaseOpened()
+  }, [notificationCaseToOpen, onNotificationCaseOpened, workflowCases])
 
   const inboxItems = workflowCases.flatMap((item) =>
     item.alerts
@@ -3444,11 +3516,40 @@ function getVisibleCases(cases: WorkflowCase[], user: UserAccount) {
   })
 }
 
-function countNotifications(cases: WorkflowCase[], user: UserAccount) {
-  if (user.role === 'dg') {
-    return cases.reduce((total, item) => total + item.alerts.filter((alert) => alert.to === 'dg' || alert.response).length, 0)
-  }
-  return cases.reduce((total, item) => total + item.alerts.filter((alert) => alert.to === user.role && !alert.response).length, 0)
+function buildAppNotifications(workflowCases: WorkflowCase[], collectionCases: CollectionCase[], user: UserAccount): AppNotification[] {
+  const workflowNotifications = workflowCases.flatMap((item) =>
+    item.alerts
+      .filter((alert) => user.role === 'dg'
+        ? alert.to === 'dg' || Boolean(alert.response)
+        : alert.to === user.role && !alert.response)
+      .map((alert) => ({
+        id: `workflow-${item.id}-${alert.id}`,
+        title: `${item.id} - ${item.title}`,
+        detail: `${roleLabels[alert.from]} vers ${roleLabels[alert.to]}: ${alert.message}`,
+        meta: `${item.supplier} - ${item.amount} - ${formatDossierDate(item)}`,
+        tone: item.status === 'Bloqué' || item.priority === 'Urgent' ? 'danger' as const : item.status === 'Retour DG' ? 'warning' as const : 'info' as const,
+        target: {
+          screen: 'taches' as ScreenKey,
+          caseId: item.id,
+          department: user.role === 'dg' ? item.currentRole : user.role,
+        },
+      })),
+  )
+
+  const recoveryNotifications = user.role === 'dg'
+    ? collectionCases.flatMap((item) => (item.directionNotices ?? []).map((notice) => ({
+        id: `recovery-${item.id}-${notice.id}`,
+        title: `${notice.dossierId} - Recouvrement ${notice.client}`,
+        detail: `${notice.commercial}: reçu ${formatNumber(notice.paidAmount)} TND, reste ${formatNumber(notice.remainingAmount)} TND.`,
+        meta: `${formatInstallmentList(notice.installments)} - Envoyée le ${notice.sentAt}`,
+        tone: notice.remainingAmount > 0 ? 'warning' as const : 'success' as const,
+        target: {
+          screen: 'encaissements' as ScreenKey,
+        },
+      })))
+    : []
+
+  return [...recoveryNotifications, ...workflowNotifications].slice(0, 12)
 }
 
 export default App
