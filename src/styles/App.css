@@ -2186,6 +2186,52 @@ tbody tr:hover {
   display: none;
 }
 
+.installment-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.installment-breakdown article {
+  min-height: 92px;
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  border: 1px solid #cfe0f2;
+  border-left: 4px solid #10a66c;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(16, 32, 51, 0.06);
+}
+
+.installment-breakdown span {
+  color: #2f75de;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.installment-breakdown strong {
+  color: #102033;
+  font-size: 14px;
+}
+
+.installment-breakdown small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #60758d;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.installment-breakdown svg {
+  flex: 0 0 auto;
+  color: #10a66c;
+}
+
 .dg-observation {
   border-color: #ffd7ab;
   background: #fff8f0;
@@ -3846,6 +3892,7 @@ tbody tr:hover {
   .department-board,
   .important-dates,
   .payment-plan-rail,
+  .installment-breakdown,
   .dossier-modal-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
@@ -4035,6 +4082,7 @@ tbody tr:hover {
   .important-dates,
   .important-dates article,
   .payment-plan-rail,
+  .installment-breakdown,
   .simple-task-header,
   .simple-task-kpis,
   .department-filter,

@@ -982,7 +982,7 @@ function Cashflow({
       return
     }
     const supplierPressure = getSupplierPaymentPressure(supplierCommitments)
-    const installmentCount = getInstallmentCount(draft.installmentCount, supplierPressure.recommendedInstallments)
+    const installmentCount = getInstallmentCount(draft.installmentCount)
     const plannedPayments = buildPaymentSchedule({
       paidAmount: Math.min(amount, target.assignedAmount),
       remainingAmount: remaining,
@@ -1313,7 +1313,7 @@ function CommercialRecovery({
           const latestObservation = item.observations.at(-1)
           const declaredAmount = Number(draft.recoveredAmount.replace(/[^\d]/g, '')) || 0
           const draftRemaining = Math.max(0, item.assignedAmount - declaredAmount)
-          const installmentCount = getInstallmentCount(draft.installmentCount, supplierPressure.recommendedInstallments)
+          const installmentCount = getInstallmentCount(draft.installmentCount)
           const generatedPlan = buildPaymentSchedule({
             paidAmount: Math.min(declaredAmount, item.assignedAmount),
             remainingAmount: draftRemaining,
@@ -1402,7 +1402,7 @@ function CommercialRecovery({
                   <div className="auto-remark">
                     <span>Remarque générée sans saisie manuelle</span>
                     <strong>Reste détecté: {formatNumber(draftRemaining)} TND</strong>
-                    <PaymentPlanRail payments={generatedPlan} compact />
+                    <InstallmentBreakdown payments={generatedPlan} />
                     <p>{generatedRemark}</p>
                   </div>
                   <button className="primary-action" type="submit">
@@ -1450,6 +1450,30 @@ function PaymentPlanRail({ payments, compact }: { payments: PaymentSchedule[]; c
         <article className={payment.status === 'Payé' ? 'paid' : payment.status === 'À renégocier' ? 'warning' : ''} key={payment.id}>
           <span>{payment.dueDate}</span>
           <strong>{formatNumber(payment.amount)} TND</strong>
+          <small>{payment.mode} - {payment.status}</small>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function InstallmentBreakdown({ payments }: { payments: PaymentSchedule[] }) {
+  const futurePayments = payments.filter((payment) => payment.status !== 'Payé')
+
+  if (!futurePayments.length) {
+    return <PaymentPlanRail payments={payments} compact />
+  }
+
+  return (
+    <div className="installment-breakdown" aria-label="Détail des échéances générées">
+      {futurePayments.map((payment, index) => (
+        <article key={payment.id}>
+          <span>Échéance {index + 1}</span>
+          <strong>{formatNumber(payment.amount)} TND</strong>
+          <small>
+            <CalendarDays size={13} />
+            {payment.dueDate}
+          </small>
           <small>{payment.mode} - {payment.status}</small>
         </article>
       ))}
@@ -2898,9 +2922,9 @@ function getCollectionRemaining(item: CollectionCase) {
   return Math.max(0, item.assignedAmount - item.recoveredAmount)
 }
 
-function getInstallmentCount(value: string, recommendedMaximum = 3) {
+function getInstallmentCount(value: string) {
   const parsed = Number(value) || 1
-  return Math.max(1, Math.min(3, Math.min(parsed, recommendedMaximum)))
+  return Math.max(1, Math.min(3, parsed))
 }
 
 function formatDateInput(value: string) {
