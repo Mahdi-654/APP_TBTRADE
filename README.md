@@ -1,21 +1,32 @@
-# TB Trade Dashboard
+# TBTrade
 
-Application web React + Vite + TypeScript pour les interfaces de pilotage TB Trade :
+TBTrade est une application React + TypeScript de pilotage des opérations
+commerciales. Une opération reste rattachée à un dossier unique pendant tout son
+cycle de vie : Commercial, Stock, Approvisionnement, Finance, Livraison,
+Facturation, Recouvrement, Comptabilité, Direction Générale et clôture.
 
-- Dashboard Direction Générale
-- Gestion des FNR
-- Encaissements
-- Décaissements
-- Trésorerie
-- Stocks
-- Tâches
-- Rapports & analyses
+## Référence fonctionnelle
 
-## Données
+Le cahier fonctionnel complet est disponible dans
+[docs/README_FONCTIONNEL.md](docs/README_FONCTIONNEL.md).
 
-La version actuelle utilise des données fictives pour reproduire la maquette.
+Avant toute modification métier, consulter ce document afin de vérifier :
 
-Le fichier `.env` est volontairement vide. Les variables de connexion seront ajoutées quand le client fournira le clone ou l'IP de la base de données de production.
+- le workflow du dossier ;
+- les rôles et permissions ;
+- les transitions et validations ;
+- la traçabilité et les notifications ;
+- les conditions de verrouillage, de réouverture et de clôture.
+
+## État actuel
+
+La version actuelle utilise des données de démonstration pour valider l'interface
+et le workflow. L'authentification, la base de données, les contrôles backend et
+le connecteur Sage 100 doivent être finalisés avant l'utilisation réelle en
+production.
+
+Les variables de connexion seront ajoutées lorsque les accès à la base de données
+et à Sage 100 seront disponibles.
 
 ## Lancement
 
@@ -28,4 +39,10 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+## Qualité
+
+```bash
+npm run lint
 ```
